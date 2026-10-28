@@ -1,4 +1,5 @@
 import { M1Error } from '../core/errors';
+import { systemoneModelsUrl } from '../local/lifecycle';
 import type { ProviderKind } from './types';
 
 /** Capacidades conocidas de un modelo. `images` es la única que el motor usa para bloquear. */
@@ -517,11 +518,23 @@ function mapSystemoneModel(raw: unknown): ModelInfo | undefined {
   const id = stringField(raw, ['id', 'name', 'model']);
   if (!id) return undefined;
   const description = stringField(raw, ['description']);
+  const architecture = isRecord(raw.architecture) ? raw.architecture : undefined;
+  const inputs = Array.isArray(architecture?.input_modalities)
+    ? architecture.input_modalities.map((value) => String(value).toLowerCase())
+    : undefined;
+
   return {
     id,
     name: stringField(raw, ['name']) ?? id,
     provider: 'systemone',
-    capabilities: { images: true },
+    capabilities:
+      inputs === undefined
+        ? { images: true }
+        : {
+            images: inputs.includes('image'),
+            ...(inputs.includes('audio') ? { audio: true } : {}),
+            ...(inputs.includes('video') ? { video: true } : {}),
+          },
     source: 'api',
     ...(description !== undefined ? { description } : {}),
   };
@@ -692,12 +705,13 @@ async function listOpenRouter(options: ListModelsOptions, warnings: string[]): P
   }
 }
 
-async function listSystemone(options: ListModelsOptions, warnings: string[]): Promise<ModelInfo[]> {  if (!options.baseUrl) {
+async function listSystemone(options: ListModelsOptions, warnings: string[]): Promise<ModelInfo[]> {
+  if (!options.baseUrl) {
     warnings.push('provider systemone sin baseUrl: no se pudo consultar el catálogo');
     return [];
   }
 
-  const url = `${options.baseUrl.trim().replace(/\/+$/, '')}/models`;
+  const url = systemoneModelsUrl(options.baseUrl.trim());
   const headers: Record<string, string> = {};
   if (options.apiKey) headers.Authorization = `Bearer ${options.apiKey}`;
 

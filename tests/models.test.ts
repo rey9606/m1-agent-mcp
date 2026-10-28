@@ -429,7 +429,7 @@ describe('listModels: systemone', () => {
 
     expect(warnings).toEqual([]);
     expect(models.map((model) => model.id)).toEqual(['local-a', 'local-b']);
-    expect(callOf(fetchMock).url).toBe('http://localhost:8000/v1/systemone/models');
+    expect(callOf(fetchMock).url).toBe('http://localhost:8000/v1/models');
   });
 });
 

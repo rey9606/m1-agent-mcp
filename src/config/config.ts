@@ -10,7 +10,7 @@ export interface AppConfig {
   source?: string;
 }
 
-const VALID_KINDS: ProviderKind[] = ['cloudflare', 'typesafe', 'systemone', 'mock'];
+const VALID_KINDS: ProviderKind[] = ['cloudflare', 'typesafe', 'openrouter', 'systemone', 'mock'];
 
 /** Carga .env del cwd si existe. No pisa variables ya definidas. */
 export function loadDotEnv(cwd = process.cwd()): void {

@@ -122,7 +122,7 @@ describe('parseConfig', () => {
 
     expect(error.code).toBe('E_CONFIG');
     expect(error.message).toContain('inexistente');
-    expect(error.hint).toContain('cloudflare, typesafe, systemone, mock');
+    expect(error.hint).toContain('cloudflare, typesafe, openrouter, systemone, mock');
   });
 
   it('falla si providers está vacío', () => {

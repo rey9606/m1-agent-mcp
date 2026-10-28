@@ -61,7 +61,12 @@ export function deleteCredential(alias: string): boolean {
  */
 export function resolveSecrets(alias: string, cfg: ProviderConfig): Credential {
   const creds = loadCredentials()[alias] ?? {};
-  const defaultEnv = cfg.kind === 'cloudflare' ? 'CLOUDFLARE_API_TOKEN' : undefined;
+  const defaultEnv =
+    cfg.kind === 'cloudflare'
+      ? 'CLOUDFLARE_API_TOKEN'
+      : cfg.kind === 'openrouter'
+        ? 'OPENROUTER_KEY'
+        : undefined;
   const apiKeyEnv = cfg.apiKeyEnv || creds.apiKeyEnv || defaultEnv;
   const envApiKey = apiKeyEnv ? process.env[apiKeyEnv] || undefined : undefined;
   const apiKey = cfg.apiKey || envApiKey || creds.apiKey;

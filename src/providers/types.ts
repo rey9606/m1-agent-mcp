@@ -55,7 +55,7 @@ export interface DecisionResponse {
   raw?: unknown;
 }
 
-export type ProviderKind = 'cloudflare' | 'typesafe' | 'systemone' | 'mock';
+export type ProviderKind = 'cloudflare' | 'typesafe' | 'openrouter' | 'systemone' | 'mock';
 
 export interface ProviderConfig {
   kind: ProviderKind;

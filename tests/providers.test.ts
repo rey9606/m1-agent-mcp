@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { M1Error } from '../src/core/errors.js';
 import { createCloudflareProvider } from '../src/providers/cloudflare.js';
 import { createMockProvider } from '../src/providers/mock.js';
+import { createOpenRouterProvider } from '../src/providers/openrouter.js';
 import { createProvider, defaultModelFor } from '../src/providers/registry.js';
 import { createSystemOneProvider } from '../src/providers/systemone.js';
 import { createTypesafeProvider } from '../src/providers/typesafe.js';
@@ -221,6 +222,152 @@ describe('typesafe (JEV)', () => {
   });
 });
 
+describe('openrouter (System One)', () => {
+  it('llama al endpoint systemone con el modelo configurado y Bearer', async () => {
+    const fetchMock = stubFetch(() =>
+      jsonResponse({ model: 'typesafe/jev-1.14', answers: ANSWERS }),
+    );
+    const provider = createOpenRouterProvider('or', {
+      kind: 'openrouter',
+      apiKey: 'or-key',
+      model: 'typesafe/jev-1.14',
+    });
+
+    const res = await provider.evaluate(baseRequest());
+
+    const { url, init } = callOf(fetchMock);
+    expect(url).toBe('https://openrouter.ai/api/v1/systemone');
+    expect(headersOf(init).Authorization).toBe('Bearer or-key');
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(body.model).toBe('typesafe/jev-1.14');
+    expect(body.images).toBeUndefined();
+    expect(res.answers).toEqual(ANSWERS);
+  });
+
+  it('usa OPENROUTER_KEY y el modelo default typesafe/jev-1.14', async () => {
+    vi.stubEnv('OPENROUTER_KEY', 'env-key');
+    const fetchMock = stubFetch(() => jsonResponse({ answers: ANSWERS }));
+    const provider = createOpenRouterProvider('or', { kind: 'openrouter' });
+
+    await provider.evaluate(baseRequest());
+
+    expect(headersOf(callOf(fetchMock).init).Authorization).toBe('Bearer env-key');
+    const body = JSON.parse(String(callOf(fetchMock).init.body)) as Record<string, unknown>;
+    expect(body.model).toBe('typesafe/jev-1.14');
+  });
+
+  it('falla con E_CONFIG si no hay API key', async () => {
+    vi.stubEnv('OPENROUTER_KEY', '');
+    const provider = createOpenRouterProvider('or', { kind: 'openrouter' });
+
+    const error = await provider.evaluate(baseRequest()).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(M1Error);
+    expect((error as M1Error).code).toBe('E_CONFIG');
+    expect((error as M1Error).hint).toContain('OPENROUTER_KEY');
+  });
+
+  it('mueve las imágenes dentro de state como partes image_url', async () => {
+    const fetchMock = stubFetch(() => jsonResponse({ answers: ANSWERS }));
+    const provider = createOpenRouterProvider('or', {
+      kind: 'openrouter',
+      apiKey: 'or-key',
+    });
+
+    await provider.evaluate(
+      baseRequest({
+        state: 'estado textual',
+        images: [{ content_type: 'image/png', base64: 'aGVsbG8=' }],
+      }),
+    );
+
+    const body = JSON.parse(String(callOf(fetchMock).init.body)) as Record<string, unknown>;
+    expect(body.images).toBeUndefined();
+    expect(body.state).toEqual([
+      'estado textual',
+      {
+        type: 'image_url',
+        image_url: { url: 'data:image/png;base64,aGVsbG8=' },
+      },
+    ]);
+  });
+
+  it('hace append de imágenes a un state array', async () => {
+    const fetchMock = stubFetch(() => jsonResponse({ answers: ANSWERS }));
+    const provider = createOpenRouterProvider('or', {
+      kind: 'openrouter',
+      apiKey: 'or-key',
+    });
+
+    await provider.evaluate(
+      baseRequest({
+        state: [{ type: 'text', text: 'hola' }],
+        images: [{ content_type: 'image/jpeg', base64: 'eA==' }],
+      }),
+    );
+
+    const body = JSON.parse(String(callOf(fetchMock).init.body)) as Record<string, unknown>;
+    expect(body.state).toEqual([
+      { type: 'text', text: 'hola' },
+      { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,eA==' } },
+    ]);
+  });
+
+  it('rechaza state objeto con imágenes antes de llamar a la API', async () => {
+    const fetchMock = stubFetch(() => jsonResponse({ answers: ANSWERS }));
+    const provider = createOpenRouterProvider('or', {
+      kind: 'openrouter',
+      apiKey: 'or-key',
+    });
+
+    const error = await provider
+      .evaluate(
+        baseRequest({
+          state: { user: 'ana' },
+          images: [{ content_type: 'image/png', base64: 'eA==' }],
+        }),
+      )
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(M1Error);
+    expect((error as M1Error).code).toBe('E_CONFIG');
+    expect((error as M1Error).details).toMatchObject({ stateType: 'object', images: 1 });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('mapea 401 y 402 a E_PROVIDER con hints propios', async () => {
+    for (const [status, hint] of [
+      [401, 'OPENROUTER_KEY'],
+      [402, 'créditos'],
+    ] as const) {
+      stubFetch(() => jsonResponse({ error: 'nope' }, status));
+      const provider = createOpenRouterProvider('or', {
+        kind: 'openrouter',
+        apiKey: 'or-key',
+      });
+
+      const error = await provider.evaluate(baseRequest()).catch((e: unknown) => e);
+      expect((error as M1Error).code).toBe('E_PROVIDER');
+      expect((error as M1Error).message).toBe(`OpenRouter ${status}`);
+      expect((error as M1Error).hint).toContain(hint);
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('marca imágenes como no soportadas en modelos free sólo texto', () => {
+    const free = createOpenRouterProvider('or', {
+      kind: 'openrouter',
+      model: 'baseten/mammoth-1:free',
+    });
+    const vision = createOpenRouterProvider('or', {
+      kind: 'openrouter',
+      model: 'typesafe/jev-1.14',
+    });
+
+    expect(free.capabilities?.images).toBe(false);
+    expect(vision.capabilities?.images).toBe(true);
+  });
+});
+
 describe('systemone (endpoint compatible)', () => {
   it('usa baseUrl y headers custom, con auth cuando hay key', async () => {
     const fetchMock = stubFetch(() => jsonResponse({ model: 'local-decision', answers: ANSWERS }));
@@ -321,14 +468,16 @@ describe('registry', () => {
   it('expone el modelo default por kind', () => {
     expect(defaultModelFor('cloudflare')).toBe('@cf/cloudflare/clef-flash');
     expect(defaultModelFor('typesafe')).toBe('jev-latest');
+    expect(defaultModelFor('openrouter')).toBe('typesafe/jev-1.14');
     expect(defaultModelFor('systemone')).toBe('local-decision');
     expect(defaultModelFor('mock')).toBe('mock');
   });
 
-  it('crea los cuatro kinds', () => {
+  it('crea los cinco kinds', () => {
     const cases: ProviderConfig[] = [
       { kind: 'cloudflare', accountId: 'a', apiKey: 't' },
       { kind: 'typesafe', apiKey: 'k' },
+      { kind: 'openrouter', apiKey: 'k' },
       { kind: 'systemone', baseUrl: 'https://example.test' },
       { kind: 'mock' },
     ];
@@ -352,6 +501,6 @@ describe('registry', () => {
 
     expect(error).toBeInstanceOf(M1Error);
     expect((error as M1Error).code).toBe('E_CONFIG');
-    expect((error as M1Error).hint).toContain('cloudflare, typesafe, systemone, mock');
+    expect((error as M1Error).hint).toContain('openrouter');
   });
 });

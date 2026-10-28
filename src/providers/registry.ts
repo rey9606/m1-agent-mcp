@@ -1,11 +1,18 @@
 import { M1Error } from '../core/errors.js';
 import { CLOUDFLARE_DEFAULT_MODEL, createCloudflareProvider } from './cloudflare.js';
 import { createMockProvider, MOCK_DEFAULT_MODEL } from './mock.js';
+import { createOpenRouterProvider, OPENROUTER_DEFAULT_MODEL } from './openrouter.js';
 import { createSystemOneProvider, SYSTEMONE_DEFAULT_MODEL } from './systemone.js';
 import { createTypesafeProvider, TYPESAFE_DEFAULT_MODEL } from './typesafe.js';
 import type { DecisionProvider, ProviderConfig, ProviderKind } from './types.js';
 
-const VALID_KINDS: readonly ProviderKind[] = ['cloudflare', 'typesafe', 'systemone', 'mock'];
+const VALID_KINDS: readonly ProviderKind[] = [
+  'cloudflare',
+  'typesafe',
+  'openrouter',
+  'systemone',
+  'mock',
+];
 
 export function defaultModelFor(kind: ProviderKind): string {
   switch (kind) {
@@ -13,6 +20,8 @@ export function defaultModelFor(kind: ProviderKind): string {
       return CLOUDFLARE_DEFAULT_MODEL;
     case 'typesafe':
       return TYPESAFE_DEFAULT_MODEL;
+    case 'openrouter':
+      return OPENROUTER_DEFAULT_MODEL;
     case 'systemone':
       return SYSTEMONE_DEFAULT_MODEL;
     case 'mock':
@@ -58,6 +67,8 @@ export function createProvider(name: string, cfg: ProviderConfig): DecisionProvi
       return createCloudflareProvider(name, cfg);
     case 'typesafe':
       return createTypesafeProvider(name, cfg);
+    case 'openrouter':
+      return createOpenRouterProvider(name, cfg);
     case 'systemone':
       return createSystemOneProvider(name, cfg);
     case 'mock':

@@ -1,0 +1,48 @@
+{
+  "CP-1": {
+    "type": "score",
+    "score": 3,
+    "probabilities": { "0": 0.02, "1": 0.03, "2": 0.15, "3": 0.8 },
+    "confidence": 0.9
+  },
+  "CP-2": {
+    "type": "choice",
+    "choice": "on_brand",
+    "probabilities": { "on_brand": 0.9, "neutro": 0.06, "off_brand": 0.02, "inconsistente": 0.02 },
+    "confidence": 0.9
+  },
+  "CP-3": {
+    "type": "noul",
+    "noul": 0.92
+  },
+  "CP-4": {
+    "type": "noul",
+    "noul": 0.9
+  },
+  "CP-5": {
+    "type": "score",
+    "score": 2,
+    "probabilities": { "0": 0.05, "1": 0.15, "2": 0.8 },
+    "confidence": 0.85
+  },
+  "UX-1": {
+    "type": "score",
+    "score": 3,
+    "probabilities": { "0": 0.02, "1": 0.03, "2": 0.15, "3": 0.8 },
+    "confidence": 0.88
+  },
+  "UX-2": {
+    "type": "noul",
+    "noul": 0.2
+  },
+  "UX-3": {
+    "type": "choice",
+    "choice": "consistente",
+    "probabilities": { "consistente": 0.85, "parcial": 0.12, "inconsistente": 0.03 },
+    "confidence": 0.85
+  },
+  "UX-4": {
+    "type": "noul",
+    "noul": 0.9
+  }
+}

@@ -1,0 +1,202 @@
+# m1-agent
+
+CLI y motor de flujo para **agentes de decisión** definidos en JSON. No es un LLM: interpreta una receta, arma las preguntas y delega el juicio a Clef (Cloudflare) o JEV (TypeSafe) para obtener respuestas tipadas. La decisión final (normalización, score, issues, veredicto) es determinista y la calcula el motor, no el modelo.
+
+## Requisitos
+
+- Node >= 22 (el proyecto se desarrolla con Node 24).
+- pnpm.
+- Credenciales de al menos un proveedor (o usar `mock`).
+
+## Instalación
+
+```bash
+pnpm install
+```
+
+Crear el archivo de entorno y completar las credenciales de Cloudflare:
+
+```bash
+cp .env.example .env          # PowerShell: Copy-Item .env.example .env
+```
+
+```dotenv
+CLOUDFLARE_ACCOUNT_ID=<account-id>
+CLOUDFLARE_API_TOKEN=<api-token>
+```
+
+Crear la configuración local a partir del ejemplo:
+
+```bash
+cp m1.config.example.json m1.config.json    # PowerShell: Copy-Item m1.config.example.json m1.config.json
+```
+
+Verificar el entorno:
+
+```bash
+pnpm m1 doctor
+```
+
+Alternativa para guardar credenciales sin `.env`:
+
+```bash
+pnpm m1 auth set cf --token <api-token> --account-id <account-id>
+```
+
+Se guardan en `~/.config/m1-agent/credentials.json` (modo 0600 best-effort).
+
+## Quickstart
+
+Evaluar un texto con la receta de copy:
+
+```bash
+pnpm m1 run examples/copy-checker.json \
+  --state "Empezá tu prueba gratis. Sin tarjeta." \
+  --json
+```
+
+Evaluar una pantalla con la receta de UX (el `--state` va al slot `brief`, la imagen al slot `screens`):
+
+```bash
+pnpm m1 run examples/ux-checker.json \
+  --state "App de turnos médicos, audiencia 30-50" \
+  --image ./shots/home.png \
+  --json
+```
+
+Inspeccionar los requests sin llamar al proveedor:
+
+```bash
+pnpm m1 run examples/copy-checker.json --state "texto" --print-request
+```
+
+## Comandos
+
+| Comando | Para qué | Flags principales |
+| --- | --- | --- |
+| `m1 run <recipe>` | Ejecuta una receta sobre un trabajo | `-i, --input <file>`, `--state <text>`, `--state-file <file>`, `--image <path>` (repetible), `--slot <name>`, `--image-slot <name>`, `--stdin`, `--provider <alias>`, `--model <id>`, `--timeout <ms>`, `--dry-run`, `--print-request`, `--trace`, `--json`, `--compact`, `-c, --config <file>` |
+| `m1 recipe validate <file>` | Valida esquema y reglas semánticas | `--json` |
+| `m1 recipe schema` | Imprime el JSON Schema de la receta | `--json` (misma salida) |
+| `m1 auth set <alias>` | Guarda credenciales del provider | `--token <key>`, `--account-id <id>`, `--env <VAR>`, `--json` |
+| `m1 auth status` | Muestra providers configurados sin secretos | `--json`, `-c, --config <file>` |
+| `m1 auth remove <alias>` (alias `rm`) | Borra credenciales guardadas | `--json` |
+| `m1 doctor` | Diagnóstico de Node, config, `.env` y providers | `--json`, `-c, --config <file>` |
+
+Notas de comportamiento:
+
+- `--print-request` implica `--dry-run` y sale con código 0.
+- `--input` y `--stdin` se combinan; `--state`, `--state-file` y `--image` se aplican después y pisan o agregan sobre lo cargado.
+- `--json` tiene prioridad sobre `--compact`. Con `--json`, `--trace` no escribe en stderr.
+- El timeout es **por etapa** (cada llamada al proveedor), no del run completo.
+
+### Exit codes
+
+| Código | Significado | Cuándo |
+| --- | --- | --- |
+| `0` | `pass` | Veredicto `pass`, o ejecución `--dry-run` / `--print-request` |
+| `1` | `fail` | Veredicto `fail` |
+| `2` | `error` | Error de uso, validación, input, config, proveedor o timeout |
+| `3` | `needs_review` | Veredicto `needs_review` (criterio `blocker` con baja confianza) |
+
+`doctor` usa 0/2. `recipe validate` usa 0/2. Cualquier error de la CLI (`fail()`) termina en 2.
+
+## Cómo funciona
+
+```text
+receta.json
+   |
+   v
+validar (zod + chequeos semanticos)
+   |
+   v
+resolver input (slots, defaults, imagenes, presupuesto)
+   |
+   v
+planificar etapas (orden declarado)
+   |
+   +--> etapa 1: when? -> state (plantilla) -> imagenes -> 1 request con N preguntas
+   |       |
+   |       +--> normalizar cada respuesta -> scope para etapas siguientes
+   |
+   +--> etapa 2: ... (puede usar answers.<id> en su state y en su when)
+   |
+   v
+derived (en orden) -> acceptance -> veredicto + score + issues
+   |
+   v
+salida humana | compacta | JSON
+```
+
+Puntos clave:
+
+- **Una llamada HTTP por etapa.** Dentro del request viajan todas las preguntas de la etapa; el paralelismo es del proveedor, no del motor.
+- **`when` se evalúa antes de armar el state.** Si da falso, la etapa se saltea y no cuesta una llamada.
+- **`state` es la única parte dinámica del request.** Las `instructions` de los criterios son estáticas; el contexto variable va en `state` mediante plantillas `{{...}}`.
+- **La normalización es fija:** `noul`/`choice`/`score` se convierten a 0..1, se aplica `polarity`, se compara contra `passAt`, y se pondera por `weight`.
+- **El veredicto no promedia:** se decide por acceptance y por criterios `blocker` (ver [docs/recipe-spec.md](docs/recipe-spec.md)).
+
+## Multi-proveedor
+
+| `kind` | Modelo por defecto | Endpoint por defecto | Imágenes | Credencial |
+| --- | --- | --- | --- | --- |
+| `cloudflare` | `@cf/cloudflare/clef-flash` | `https://api.cloudflare.com/client/v4/accounts/<accountId>/ai/run/@cf/cloudflare/<model>` | Sí | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` |
+| `typesafe` | `jev-latest` | `https://api.typesafe.ai/v1/systemone` | No | `TYPESAFE_API_KEY` |
+| `systemone` | `local-decision` (configurable) | `baseUrl` obligatorio | Sí | opcional (`apiKeyEnv` o `SYSTEMONE_API_KEY`) |
+| `mock` | `mock` | — | No | — |
+
+La precedencia de secretos es: `apiKey`/`accountId` explícitos en la config > variable de entorno (`apiKeyEnv`, y `CLOUDFLARE_ACCOUNT_ID` para la cuenta) > `~/.config/m1-agent/credentials.json`.
+
+### Agregar un proveedor nuevo
+
+1. Implementar una factory en `src/providers/<nombre>.ts` que devuelva un `DecisionProvider` (`evaluate(request, options)`).
+2. Agregar el `kind` a `ProviderKind` en `src/providers/types.ts`.
+3. Registrarlo en `src/providers/registry.ts` (`createProvider`, `defaultModelFor`) y en `VALID_KINDS` de `src/config/config.ts` (la lista está duplicada; hay que tocar ambas).
+4. Si el endpoint no es compatible con el contrato de `src/providers/types.ts`, adaptar la respuesta dentro de la factory: el motor solo consume `{ answers }`.
+
+Un endpoint "systemone compatible" es el atajo para no escribir código: mismo body, misma respuesta y `baseUrl` configurable.
+
+## Límites duros
+
+| Límite | Valor | Dónde se aplica |
+| --- | --- | --- |
+| Preguntas por etapa | 64 | `src/schema/recipe.ts` |
+| Opciones de `choice` | 2..255 | `src/schema/recipe.ts` |
+| Niveles de `score` | 2..10 | `src/schema/recipe.ts` |
+| Imágenes por request | 4 | `src/intake/images.ts` |
+| Peso por imagen | 4 MiB | `src/intake/images.ts` |
+| Total decodificado | 8 MiB | `src/intake/images.ts` |
+| Body HTTP estimado | 13 MiB | `src/intake/images.ts` |
+| Megapíxeles por imagen | 16 MP | `src/intake/images.ts` |
+| Formatos de imagen | PNG, JPEG, WebP (por magic bytes) | `src/intake/images.ts` |
+| Etapas | `limits.maxStages` (default efectivo 32, tope de esquema 64) | `src/core/validate.ts` |
+| Timeout por llamada | 60 s (default) | `src/core/engine.ts`, `src/providers/cloudflare.ts` |
+
+## Estado del proyecto
+
+- Motor, validación, normalización, agregación y cuatro providers implementados.
+- Recetas de ejemplo: `examples/copy-checker.json`, `examples/ux-checker.json`.
+- Tests unitarios en `tests/` (engine, expr, intake, normalize, providers, template).
+- Pendiente: servidor **MCP** que exponga `run`/`recipe validate` como tools y el catálogo de recetas como resources.
+- Pendiente: concurrencia entre etapas independientes (hoy el motor es secuencial por diseño).
+
+## Documentación
+
+- [docs/recipe-spec.md](docs/recipe-spec.md) — referencia de la receta v1, expresiones, plantillas y veredicto.
+- [docs/for-agents.md](docs/for-agents.md) — manual para que otro agente use la CLI sin equivocarse.
+- [docs/api-contract.md](docs/api-contract.md) — contrato de Clef/JEV y límites/costos.
+
+## Discrepancias detectadas
+
+Comportamientos reales que difieren de lo que sugieren los nombres, la ayuda o la documentación previa:
+
+1. `src/schema/recipe.ts:144` permite `limits.maxStages` hasta 64, pero `src/core/validate.ts:100` aplica un default de 32 y rechaza cualquier receta con más etapas si no se sube el límite explícitamente.
+2. `src/schema/recipe.ts:158` declara `provider` en la receta, pero `src/cli/commands/run.ts:71` lo ignora: el proveedor sale de `--provider` o del `default` de la config.
+3. `src/schema/recipe.ts:164` declara `outputs`, pero ningún renderer lo lee (`src/render/json.ts`, `human.ts`, `compact.ts`): la salida siempre incluye todos los campos.
+4. `src/core/aggregate.ts:31-34` intenta leer `passAt` de `CriterionResult`, pero el motor no lo adjunta (`src/core/engine.ts:260-274`). Los mensajes de issue siempre muestran el umbral `0.50`, aunque el criterio tenga `passAt: 0.7`.
+5. `src/core/aggregate.ts:108-109`: `acceptance.severity` no cambia el veredicto; cualquier acceptance fallado da `fail`, sea `blocker` o no.
+6. `src/cli/index.ts:28` describe `--timeout` como "timeout total por etapa"; se aplica por llamada (etapa), no al run completo (`src/core/engine.ts:111`, `src/core/engine.ts:234`).
+7. `src/cli/index.ts:66` describe `auth set --env` como "sólo indica la variable de entorno a usar", pero `src/cli/commands/auth.ts:16-25` no persiste nada: solo imprime un mensaje y sale con 0.
+8. `src/config/credentials.ts:61` resuelve `accountId` desde `CLOUDFLARE_ACCOUNT_ID` para cualquier `kind`, no solo `cloudflare`.
+9. `.env.example:1-6` no declara `LOCAL_API_KEY` ni `SYSTEMONE_API_KEY`, aunque `m1.config.example.json:19` usa `LOCAL_API_KEY` y `src/providers/systemone.ts:44` busca `SYSTEMONE_API_KEY` por defecto.
+10. `--print-request`/`--dry-run` no respeta `when`: `src/core/engine.ts:137-155` siembra respuestas neutras (`0.5` o la primera opción) y `src/core/engine.ts:163-179` saltea la evaluación de `when`, así que imprime todas las etapas. El veredicto del dry-run es `fail` con score 0, pero el exit code es 0 (`src/cli/commands/run.ts:141`).
+11. `src/intake/images.ts:14` impone además un máximo de 16 MP por imagen, que no figuraba en la lista de límites original.

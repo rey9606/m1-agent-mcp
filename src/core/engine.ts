@@ -73,7 +73,7 @@ function buildQuestion(criterion: Criterion): Question {
 }
 
 function stageProviderError(error: unknown, stageId: string): M1Error {
-  if (isM1Error(error) && (error.code === 'E_CONFIG' || error.code === 'E_PROVIDER')) return error;
+  if (isM1Error(error) && (error.code === 'E_CONFIG' || error.code === 'E_PROVIDER' || error.code === 'E_INPUT' || error.code === 'E_TIMEOUT')) return error;
   const message = error instanceof Error ? error.message : String(error);
   return new M1Error('E_PROVIDER', `etapa "${stageId}" falló: ${message}`, {
     hint: `la llamada al provider falló en la etapa "${stageId}"; revisá credenciales, red y el modelo configurado`,
@@ -231,6 +231,8 @@ export async function runRecipe(args: {
     const callStarted = Date.now();
     let response: DecisionResponse;
     try {
+      // Guarda de tamaño real del body (no sólo de las imágenes): el límite es 13 MiB.
+      assertBodyBudget(Buffer.byteLength(JSON.stringify(request), 'utf8'));
       response = await deps.provider.evaluate(request, { signal: AbortSignal.timeout(timeoutMs) });
     } catch (error) {
       const err = stageProviderError(error, stage.id);

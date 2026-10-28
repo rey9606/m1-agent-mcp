@@ -1,16 +1,8 @@
-import { spawn } from 'node:child_process';
-import {
-  closeSync,
-  existsSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { connect } from 'node:net';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { M1Error } from '../core/errors';
 import type { LocalAutoStart, ProviderConfig } from '../providers/types';
 
@@ -311,27 +303,144 @@ export interface SpawnedServer {
 export interface LocalRuntime {
   probe: (baseUrl: string, options?: ProbeOptions) => Promise<LocalProbeResult>;
   isPortOpen: (host: string, port: number) => Promise<boolean>;
-  spawnServer: (spec: LaunchSpec, logPath: string) => SpawnedServer;
+  spawnServer: (spec: LaunchSpec, logPath: string) => SpawnedServer | Promise<SpawnedServer>;
   confirm: (question: string) => Promise<boolean>;
   sleep: (ms: number) => Promise<void>;
   now: () => number;
   isAlive: (pid: number) => boolean;
 }
 
-function spawnServer(spec: LaunchSpec, logPath: string): SpawnedServer {
-  mkdirSync(dirname(logPath), { recursive: true });
-  const fd = openSync(logPath, 'a');
+/**
+ * Script que lanza el servidor detached y escribe su PID.
+ *
+ * Se ejecuta con `process.execPath` (node), no con el runner actual. Así el
+ * servidor queda en un grupo de procesos distinto y sobrevive aunque la CLI
+ * corra bajo `tsx` (que mata su árbol de procesos al salir).
+ */
+const SPAWN_HELPER = `import { spawn } from 'node:child_process';
+import { appendFileSync, closeSync, openSync, writeFileSync } from 'node:fs';
+
+const [logPath, pidPath, command, ...args] = process.argv.slice(2);
+let fd;
+try {
+  fd = openSync(logPath, 'a');
+  const child = spawn(command, args, {
+    detached: true,
+    stdio: ['ignore', fd, fd],
+    windowsHide: true,
+  });
+  if (child.pid === undefined) throw new Error('spawn no devolvió un pid');
+  writeFileSync(pidPath, String(child.pid));
+  child.unref();
+} catch (error) {
   try {
-    const child = spawn(spec.command, spec.args, {
-      detached: true,
-      stdio: ['ignore', fd, fd],
-      windowsHide: true,
-    });
-    child.unref();
-    return child;
-  } finally {
-    closeSync(fd);
+    appendFileSync(logPath, \`[m1] no se pudo lanzar \${command}: \${String((error && error.stack) || error)}\\n\`);
+  } catch {
+    /* sin log tampoco podemos hacer nada */
   }
+  process.exitCode = 1;
+} finally {
+  if (fd !== undefined) closeSync(fd);
+}
+`;
+
+function quoteWindows(value: string): string {
+  return /[\s"]/u.test(value) ? `"${value.replaceAll('"', '\\"')}"` : value;
+}
+
+/**
+ * Lanza el helper con WMI (`Win32_Process.Create`).
+ *
+ * En Windows, `pnpm run`/`pnpm exec` matan el árbol de procesos al salir, y
+ * `detached` no alcanza: el proceso creado por WmiPrvSE no pertenece a ese job.
+ * Devuelve `false` si WMI no está disponible (se usa el spawn directo).
+ */
+function launchViaWmi(command: string, args: string[]): boolean {
+  if (process.platform !== 'win32') return false;
+
+  const commandLine = [command, ...args].map(quoteWindows).join(' ');
+  const script = [
+    "$ProgressPreference='SilentlyContinue'",
+    "$ErrorActionPreference='Stop'",
+    'try {',
+    "  $p = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $env:M1_LAUNCH_CMDLINE; CurrentDirectory = $env:M1_LAUNCH_CWD }",
+    '  if ($p.ReturnValue -ne 0) { [Console]::Error.WriteLine("WMI return " + $p.ReturnValue); exit 1 }',
+    '  [Console]::Out.WriteLine($p.ProcessId)',
+    '} catch {',
+    '  [Console]::Error.WriteLine($_.Exception.Message)',
+    '  exit 1',
+    '}',
+  ].join('\n');
+
+  const encoded = Buffer.from(script, 'utf16le').toString('base64');
+  const result = spawnSync(
+    'powershell.exe',
+    ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
+    {
+      windowsHide: true,
+      encoding: 'utf8',
+      timeout: 30_000,
+      env: { ...process.env, M1_LAUNCH_CMDLINE: commandLine, M1_LAUNCH_CWD: process.cwd() },
+    },
+  );
+  return result.status === 0;
+}
+
+async function readSpawnedPid(pidPath: string, timeoutMs: number): Promise<number> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      const pid = Number.parseInt(readFileSync(pidPath, 'utf8').trim(), 10);
+      if (Number.isInteger(pid) && pid > 0) return pid;
+    } catch {
+      /* el helper todavía no escribió el pid */
+    }
+    if (Date.now() >= deadline) return 0;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
+async function spawnServer(spec: LaunchSpec, logPath: string): Promise<SpawnedServer> {
+  mkdirSync(dirname(logPath), { recursive: true });
+  const dir = dirname(logPath);
+  const helperPath = join(dir, '.m1-spawn-helper.mjs');
+  writeFileSync(helperPath, SPAWN_HELPER, 'utf8');
+
+  const pidPath = join(dir, `.m1-${basename(logPath)}-${process.pid}-${Date.now()}.pid`);
+  const helperArgs = [helperPath, logPath, pidPath, spec.command, ...spec.args];
+
+  const viaWmi = launchViaWmi(process.execPath, helperArgs);
+  let status: number | null = 0;
+  if (!viaWmi) {
+    const result = spawnSync(process.execPath, helperArgs, {
+      windowsHide: true,
+      encoding: 'utf8',
+      timeout: 30_000,
+    });
+    status = result.status;
+  }
+
+  const pid = await readSpawnedPid(pidPath, viaWmi ? 30_000 : 5_000);
+  rmSync(pidPath, { force: true });
+
+  if (pid <= 0) {
+    throw new M1Error('E_PROVIDER', `no se pudo ejecutar "${spec.command}"`, {
+      hint: '¿está instalado y en el PATH?',
+      details: `revisá el log: ${logPath}${status !== 0 ? ` (helper exit ${status ?? 'null'})` : ''}`,
+    });
+  }
+
+  return {
+    pid,
+    exitCode: null,
+    kill: () => {
+      try {
+        process.kill(pid);
+      } catch {
+        /* ya no está */
+      }
+    },
+  };
 }
 
 async function confirmPrompt(question: string): Promise<boolean> {
@@ -431,6 +540,16 @@ async function waitForReady(options: WaitOptions): Promise<void> {
         details: tailLog(options.logPath),
       });
     }
+    if (
+      options.child?.exitCode === null &&
+      options.child.pid !== undefined &&
+      !options.runtime.isAlive(options.child.pid)
+    ) {
+      throw new M1Error('E_PROVIDER', 'el servidor local terminó antes de quedar listo', {
+        hint: `revisá el log: ${options.logPath ?? '(sin log)'}`,
+        details: tailLog(options.logPath),
+      });
+    }
     const probe = await options.runtime.probe(options.baseUrl, {
       healthPath: options.healthPath,
       timeoutMs: 1_000,
@@ -464,7 +583,7 @@ async function startAndWait(
 
   let child: SpawnedServer;
   try {
-    child = runtime.spawnServer(spec, logPath);
+    child = await runtime.spawnServer(spec, logPath);
   } catch (error) {
     throw new M1Error('E_PROVIDER', `no se pudo ejecutar "${spec.command}"`, {
       hint: '¿está instalado y en el PATH?',

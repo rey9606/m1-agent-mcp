@@ -186,7 +186,7 @@ Comportamiento del ciclo de vida (`src/local/lifecycle.ts`):
 - Sondea `/health` con timeout corto. Si responde, no arranca nada.
 - Si el puerto preferido está ocupado por otro proceso, busca el siguiente libre (hasta 50) y reescribe `baseUrl` en memoria.
 - `autoStart: ask` sólo pregunta si `stdin` y `stderr` son TTY; `--local-start always|never` lo overridea. En `--json` nunca hay prompt.
-- El proceso se lanza detached, con stdout/stderr a `~/.cache/m1-agent/local/logs/<alias>.log`. El registro (`pid`, `port`, `baseUrl`, `logPath`) queda en `~/.cache/m1-agent/local/<alias>.json` y se reutiliza en el próximo run.
+- El proceso se lanza detached, con stdout/stderr a `~/.cache/m1-agent/local/logs/<alias>.log`. El registro (`pid`, `port`, `baseUrl`, `logPath`) queda en `~/.cache/m1-agent/local/<alias>.json` y se reutiliza en el próximo run. En Windows se usa WMI para que el servidor sobreviva a `pnpm`/`tsx` (que matan su árbol de procesos).
 - `m1 local status` sondea sin arrancar; `m1 local stop` termina el PID registrado.
 
 Límites del modelo (llama.cpp):

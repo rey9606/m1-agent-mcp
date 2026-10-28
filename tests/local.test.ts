@@ -79,7 +79,7 @@ function fakeRuntime(overrides: Partial<LocalRuntime> = {}): LocalRuntime {
     confirm: vi.fn(async () => true),
     sleep: vi.fn(async () => undefined),
     now: vi.fn(() => Date.now()),
-    isAlive: vi.fn(() => false),
+    isAlive: vi.fn(() => true),
     ...overrides,
   };
 }
@@ -290,6 +290,26 @@ describe('ensureLocalEndpoint', () => {
     expect(result.baseUrl).toBe('http://127.0.0.1:9931/v1/systemone');
     expect(runtime.confirm).not.toHaveBeenCalled();
     expect(readLocalRecord('liquid', stateDir)?.pid).toBe(4242);
+  });
+
+  it('falla si el servidor muere antes de quedar listo', async () => {
+    const runtime = fakeRuntime({
+      isAlive: vi.fn(() => false),
+      probe: vi.fn(async () => ({ state: 'down' as const })),
+    });
+
+    const error = await ensureLocalEndpoint({
+      alias: 'liquid',
+      cfg: localCfg(9931),
+      autoStart: 'always',
+      interactive: false,
+      stateDir: makeStateDir(),
+      runtime,
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(M1Error);
+    expect((error as M1Error).message).toContain('terminó antes de quedar listo');
+    expect(runtime.spawnServer).toHaveBeenCalledOnce();
   });
 
   it('si el puerto está ocupado por otro proceso usa el siguiente libre', async () => {

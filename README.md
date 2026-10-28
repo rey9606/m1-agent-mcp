@@ -186,6 +186,8 @@ Antes de llamar, `m1` sondea `GET /health` en `baseUrl`:
 
 **Elección de puerto:** parte de `launch.port` (9931). Si está ocupado por otro proceso, prueba 9932, 9933… hasta encontrar uno libre, arranca ahí y reescribe `baseUrl` en memoria. No hace falta tocar la config.
 
+En Windows el arranque pasa por WMI (`Win32_Process.Create`): así el servidor no queda dentro del job de `pnpm`/`tsx` y sobrevive cuando la CLI termina. Sin eso, `pnpm run` mata el árbol de procesos al salir.
+
 El PID, puerto y log se guardan en `~/.cache/m1-agent/local/liquid.json` (o `$M1_CACHE_DIR/local`). Eso permite reutilizar el servidor entre runs y administrarlo:
 
 ```bash

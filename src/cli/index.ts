@@ -4,6 +4,7 @@ import { runCommand } from './commands/run';
 import { recipeSchemaCommand, recipeValidateCommand } from './commands/recipe';
 import { authRemoveCommand, authSetCommand, authStatusCommand } from './commands/auth';
 import { doctorCommand } from './commands/doctor';
+import { modelResetCommand, modelShowCommand, modelUseCommand, modelsCommand } from './commands/models';
 
 const program = new Command();
 
@@ -36,8 +37,52 @@ program
     await runCommand(recipe, flags);
   });
 
-const recipe = program.command('recipe').description('herramientas de recetas');
+program
+  .command('models')
+  .description('lista los modelos disponibles del provider')
+  .option('--provider <alias>', 'provider a consultar (default: el de la config)')
+  .option('--search <texto>', 'filtra por id/nombre/descripción')
+  .option('--json', 'salida JSON (contrato estable)')
+  .option('-c, --config <file>', 'ruta a m1.config.json')
+  .action(async (flags) => {
+    await modelsCommand(flags);
+  });
 
+const model = program.command('model').description('modelo efectivo del provider');
+
+model
+  .command('show')
+  .description('muestra el modelo efectivo, su fuente y capacidades')
+  .option('--provider <alias>', 'provider a consultar (default: el de la config)')
+  .option('--json', 'salida JSON')
+  .option('-c, --config <file>', 'ruta a m1.config.json')
+  .action((flags) => {
+    modelShowCommand(flags);
+  });
+
+model
+  .command('use')
+  .description('fija el modelo del provider (preferencia de usuario o --project)')
+  .argument('<id>', 'id del modelo (ej: @cf/cloudflare/clef-omni)')
+  .option('--provider <alias>', 'provider a modificar (default: el de la config)')
+  .option('--project', 'escribe providers.<alias>.model en m1.config.json')
+  .option('--json', 'salida JSON')
+  .option('-c, --config <file>', 'ruta a m1.config.json')
+  .action((id: string, flags) => {
+    modelUseCommand(id, flags);
+  });
+
+model
+  .command('reset')
+  .description('borra la preferencia de modelo del usuario')
+  .option('--provider <alias>', 'provider a resetear (default: el de la config)')
+  .option('--json', 'salida JSON')
+  .option('-c, --config <file>', 'ruta a m1.config.json')
+  .action((flags) => {
+    modelResetCommand(flags);
+  });
+
+const recipe = program.command('recipe').description('herramientas de recetas');
 recipe
   .command('validate')
   .description('valida una receta sin ejecutarla')

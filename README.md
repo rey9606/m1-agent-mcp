@@ -80,7 +80,13 @@ pnpm m1 run examples/copy-checker.json --state "texto" --print-request
 | `m1 auth set <alias>` | Guarda credenciales del provider | `--token <key>`, `--account-id <id>`, `--env <VAR>`, `--json` |
 | `m1 auth status` | Muestra providers configurados sin secretos | `--json`, `-c, --config <file>` |
 | `m1 auth remove <alias>` (alias `rm`) | Borra credenciales guardadas | `--json` |
+| `m1 models` | Lista los modelos disponibles del provider (Cloudflare: sólo Clef) | `--provider <alias>`, `--search <texto>`, `--json`, `-c, --config <file>` |
+| `m1 model show` | Muestra el modelo efectivo, su fuente y capacidades (visión/audio/video) | `--provider <alias>`, `--json`, `-c, --config <file>` |
+| `m1 model use <id>` | Fija el modelo del provider | `--provider <alias>`, `--project`, `--json`, `-c, --config <file>` |
+| `m1 model reset` | Borra la preferencia de modelo del usuario | `--provider <alias>`, `--json`, `-c, --config <file>` |
 | `m1 doctor` | Diagnóstico de Node, config, `.env` y providers | `--json`, `-c, --config <file>` |
+
+Precedencia del modelo efectivo: `--model` (CLI) > preferencia de usuario (`~/.config/m1-agent/preferences.json`) > `provider.model` de la config > default del kind. `m1 model use` guarda en preferencias del usuario; `--project` escribe `providers.<alias>.model` en `m1.config.json`.
 
 Notas de comportamiento:
 
@@ -139,12 +145,14 @@ Puntos clave:
 
 | `kind` | Modelo por defecto | Endpoint por defecto | Imágenes | Credencial |
 | --- | --- | --- | --- | --- |
-| `cloudflare` | `@cf/cloudflare/clef-flash` | `https://api.cloudflare.com/client/v4/accounts/<accountId>/ai/run/@cf/cloudflare/<model>` | Sí | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` |
+| `cloudflare` | `@cf/cloudflare/clef-flash` | `https://api.cloudflare.com/client/v4/accounts/<accountId>/ai/run/@cf/cloudflare/<model>` | Sí (los 3 Clef) | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` |
 | `typesafe` | `jev-latest` | `https://api.typesafe.ai/v1/systemone` | No | `TYPESAFE_API_KEY` |
 | `systemone` | `local-decision` (configurable) | `baseUrl` obligatorio | Sí | opcional (`apiKeyEnv` o `SYSTEMONE_API_KEY`) |
 | `mock` | `mock` | — | Ignora | — |
 
 La precedencia de secretos es: `apiKey`/`accountId` explícitos en la config > variable de entorno (`apiKeyEnv`, y `CLOUDFLARE_ACCOUNT_ID` sólo para `kind: cloudflare`) > `~/.config/m1-agent/credentials.json`. Los valores vacíos se ignoran.
+
+Modelos Clef disponibles (todos con visión): `@cf/cloudflare/clef` (65.536 ctx, $0,24/M), `@cf/cloudflare/clef-flash` (24.576 ctx, $0,038/M) y `@cf/cloudflare/clef-omni` (65.536 ctx, $0,15/M, además audio/video). `m1 models` los consulta en vivo; `m1 model use <id>` fija el default.
 
 Orden de selección del provider: `--provider` > `provider` de la receta > `default` de `m1.config.json`.
 

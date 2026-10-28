@@ -7,3 +7,5 @@ coverage/
 *.log
 .m1/
 .DS_Store
+
+.tmp/

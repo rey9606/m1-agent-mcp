@@ -22,7 +22,9 @@ async function readStdin(): Promise<string> {
 function pickTextSlot(recipe: Recipe): string | undefined {
   const entries = Object.entries(recipe.input.slots);
   if (entries.length === 1) return entries[0]![0];
-  const required = entries.filter(([, s]) => s.required && s.type === 'text');
+  const textSlots = entries.filter(([, s]) => s.type === 'text');
+  if (textSlots.length === 1) return textSlots[0]![0];
+  const required = textSlots.filter(([, s]) => s.required);
   if (required.length === 1) return required[0]![0];
   if (recipe.input.slots.state) return 'state';
   return undefined;

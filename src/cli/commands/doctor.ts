@@ -21,7 +21,7 @@ export function doctorCommand(flags: DoctorFlags): never {
 
     const providers = Object.entries(config.providers).map(([alias, cfg]) => {
       let ok = true;
-      let detail = cfg.kind;
+      let detail: string = cfg.kind;
       try {
         const s = resolveSecrets(alias, cfg);
         if (cfg.kind === 'cloudflare') ok = Boolean(s.apiKey && s.accountId);

@@ -132,13 +132,36 @@ export async function runRecipe(args: {
   let inputTokens = 0;
   let outputTokens = 0;
 
+  // En dry-run no hay respuestas reales: sembramos valores neutros para que
+  // `when` y las plantillas `{{answers.*}}` puedan renderizarse.
+  if (dryRun) {
+    for (const criterion of recipe.criteria) {
+      const firstChoice =
+        criterion.type === 'choice' && typeof criterion.criteria === 'object' && criterion.criteria !== null
+          ? Object.keys(criterion.criteria as Record<string, unknown>)[0]
+          : undefined;
+      exprScope[criterion.id] = 0.5;
+      exprScope[`${criterion.id}.normalized`] = 0.5;
+      exprScope[`${criterion.id}.confidence`] = 0.5;
+      if (firstChoice !== undefined) exprScope[`${criterion.id}.choice`] = firstChoice;
+      richAnswers[criterion.id] = {
+        type: criterion.type,
+        ...(firstChoice !== undefined ? { choice: firstChoice } : {}),
+        raw: firstChoice ?? 0.5,
+        normalized: 0.5,
+        passed: false,
+        confidence: 0.5,
+      };
+    }
+  }
+
   const planned = planStages(recipe);
 
   for (const { stage, questions } of planned) {
     emit({ type: 'stage:start', stage: stage.id });
 
-    // 1. `when`
-    if (stage.when !== undefined) {
+    // 1. `when` (en dry-run no hay respuestas previas: se ejecutan todas las etapas)
+    if (stage.when !== undefined && !dryRun) {
       let condition: number | string | boolean;
       try {
         condition = evaluateExpression(stage.when, exprScope);
@@ -188,16 +211,16 @@ export async function runRecipe(args: {
 
     // 5. dry run: no se llama al provider.
     if (dryRun) {
-      if (images.length > 0) assertImageBudget(images as LoadedImage[]);
+      if (loadedImages.length > 0) assertImageBudget(loadedImages);
       trace.push({ id: stage.id, status: 'ran', questions: [...stage.questions], durationMs: 0 });
       emit({ type: 'stage:end', stage: stage.id, detail: { dryRun: true, request } });
       continue;
     }
 
     // 6. llamada al provider
-    if (images.length > 0) {
+    if (loadedImages.length > 0) {
       try {
-        assertImageBudget(images as LoadedImage[]);
+        assertImageBudget(loadedImages);
       } catch (error) {
         trace.push({ id: stage.id, status: 'error', questions: [...stage.questions], error: (error as Error).message });
         emit({ type: 'stage:error', stage: stage.id, detail: error });

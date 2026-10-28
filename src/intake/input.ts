@@ -90,6 +90,10 @@ export async function resolveInput(
           details: { path: `input.${name}`, expected: slot.type },
         });
       }
+      // Defaults para que las plantillas `{{slot}}` de la receta siempre resuelvan.
+      if (slot.type === 'text') vars[name] = '';
+      else if (slot.type === 'image[]') vars[name] = [];
+      else vars[name] = null;
       continue;
     }
 

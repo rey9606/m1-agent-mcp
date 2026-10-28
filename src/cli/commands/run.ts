@@ -107,7 +107,6 @@ export async function runCommand(recipePath: string, flags: RunFlags): Promise<n
         provider,
         providerName: alias,
         model,
-        dryRun: Boolean(flags.dryRun),
         timeoutMs: flags.timeout ? Number(flags.timeout) : undefined,
         onEvent: (e) => {
           if (!flags.trace || json) return;

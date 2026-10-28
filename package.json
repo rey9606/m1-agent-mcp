@@ -1,0 +1,32 @@
+{
+  "name": "m1-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Agentes de decisión (Clef/JEV) definidos por recetas JSON. CLI + motor de flujo.",
+  "bin": {
+    "m1": "./dist/cli/index.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx src/cli/index.ts",
+    "m1": "tsx src/cli/index.ts",
+    "build": "tsup src/cli/index.ts src/index.ts --format esm --clean --sourcemap",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "commander": "^13.1.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

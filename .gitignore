@@ -8,4 +8,8 @@ coverage/
 .m1/
 .DS_Store
 
+# Config local del dev: tiene rutas absolutas y credenciales de entorno.
+# El ejemplo versionado es m1.config.example.json.
+m1.config.json
+
 .tmp/

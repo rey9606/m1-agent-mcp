@@ -14,6 +14,8 @@ export interface ModelInfo {
   provider: string;
   contextWindow?: number;
   inputPricePerMillion?: number;
+  /** `true` cuando el proveedor lo publica sin costo de entrada ni salida. */
+  free?: boolean;
   capabilities: ModelCapabilities;
   source: 'api' | 'static';
   description?: string;
@@ -21,6 +23,7 @@ export interface ModelInfo {
 
 export const CLOUDFLARE_MODELS_BASE = 'https://api.cloudflare.com/client/v4/accounts';
 export const TYPESAFE_MODELS_URL = 'https://api.typesafe.ai/v1/models';
+export const OPENROUTER_MODELS_BASE = 'https://openrouter.ai/api/v1';
 export const DEFAULT_MODELS_TIMEOUT_MS = 15_000;
 
 /** Modelos Clef conocidos (sin prefijo). La allowlist la comparte `deriveClefModel`. */
@@ -109,6 +112,100 @@ const STATIC_CATALOG: readonly ModelInfo[] = [
     source: 'static',
     description: 'Provider determinista para tests y desarrollo.',
   },
+  // OpenRouter: modelos de decisión (output_modalities=decisions). Los ids y
+  // precios salen del catálogo público el 2026-10-28; el catálogo remoto manda.
+  {
+    id: 'baseten/mammoth-1:free',
+    name: 'Baseten: Mammoth 1 (free)',
+    provider: 'openrouter',
+    contextWindow: 16_384,
+    inputPricePerMillion: 0,
+    free: true,
+    capabilities: { images: false },
+    source: 'static',
+    description: 'Modelo de decisión 27B (Base Labs), gratis, sólo texto.',
+  },
+  {
+    id: 'baseten/elephant-1:free',
+    name: 'Baseten: Elephant 1 (free)',
+    provider: 'openrouter',
+    contextWindow: 16_384,
+    inputPricePerMillion: 0,
+    free: true,
+    capabilities: { images: false },
+    source: 'static',
+    description: 'Modelo de decisión 9B (Base Labs), gratis, sólo texto.',
+  },
+  {
+    id: 'respan/span-01-lite:free',
+    name: 'Respan: Span-01 Lite (free)',
+    provider: 'openrouter',
+    inputPricePerMillion: 0,
+    free: true,
+    capabilities: { images: false },
+    source: 'static',
+    description: 'Modelo de decisión de Respan, gratis, sólo texto.',
+  },
+  {
+    id: 'respan/span-02',
+    name: 'Respan: Span-02',
+    provider: 'openrouter',
+    contextWindow: 131_072,
+    inputPricePerMillion: 0.01,
+    capabilities: { images: true },
+    source: 'static',
+    description: 'Modelo de decisión abierto de Respan (texto e imágenes).',
+  },
+  {
+    id: 'typesafe/jev-1.14',
+    name: 'TypeSafe: Jev 1.14',
+    provider: 'openrouter',
+    contextWindow: 262_144,
+    inputPricePerMillion: 0.042,
+    capabilities: { images: true },
+    source: 'static',
+    description: 'JEV 1.14 servido por OpenRouter (texto e imágenes).',
+  },
+  {
+    id: '~typesafe/jev-latest',
+    name: 'TypeSafe: Jev Latest',
+    provider: 'openrouter',
+    contextWindow: 262_144,
+    inputPricePerMillion: 0.042,
+    capabilities: { images: true },
+    source: 'static',
+    description: 'Alias que sigue la última versión de JEV en OpenRouter.',
+  },
+  {
+    id: 'cloudflare/clef',
+    name: 'Cloudflare: Clef',
+    provider: 'openrouter',
+    contextWindow: 65_536,
+    inputPricePerMillion: 0.042,
+    capabilities: { images: true },
+    source: 'static',
+    description: 'Clef servido por OpenRouter (texto e imágenes).',
+  },
+  {
+    id: 'cloudflare/clef-flash',
+    name: 'Cloudflare: Clef Flash',
+    provider: 'openrouter',
+    contextWindow: 24_576,
+    inputPricePerMillion: 0.038,
+    capabilities: { images: true },
+    source: 'static',
+    description: 'Clef Flash servido por OpenRouter (texto e imágenes).',
+  },
+  {
+    id: 'cloudflare/clef-omni',
+    name: 'Cloudflare: Clef Omni',
+    provider: 'openrouter',
+    contextWindow: 65_536,
+    inputPricePerMillion: 0.15,
+    capabilities: { images: true, audio: true, video: true },
+    source: 'static',
+    description: 'Clef Omni servido por OpenRouter (texto, imágenes, audio y video).',
+  },
 ];
 
 function cloneModel(model: ModelInfo): ModelInfo {
@@ -142,11 +239,38 @@ export function capabilitiesFor(kind: ProviderKind, model: string): ModelCapabil
         : { images: true };
     case 'typesafe':
       return { images: false };
+    case 'openrouter': {
+      if (isOpenRouterTextOnly(model)) return { images: false };
+      if (model.trim().toLowerCase().startsWith('cloudflare/clef-omni')) {
+        return { images: true, audio: true, video: true };
+      }
+      return { images: true };
+    }
     case 'mock':
       return { images: true };
     case 'systemone':
       return undefined;
   }
+}
+
+/**
+ * Modelos de decisión de OpenRouter que sólo aceptan texto (catálogo 2026-10-28).
+ * Los ids desconocidos se tratan como multimodales: no bloquear por defecto.
+ */
+const OPENROUTER_TEXT_ONLY = [
+  /^baseten\//,
+  /^respan\/span-01/,
+  /^nace-ai\/drex-v1\.5$/,
+  /^nace-ai\/drex-v2\.0$/,
+  /^microsoft\//,
+  /^upstage\//,
+  /^jaredpalmer\//,
+  /^togethercomputer\//,
+];
+
+export function isOpenRouterTextOnly(model: string): boolean {
+  const id = model.trim().toLowerCase();
+  return OPENROUTER_TEXT_ONLY.some((pattern) => pattern.test(id));
 }
 
 /**
@@ -164,6 +288,9 @@ export function isValidModelId(kind: ProviderKind, id: string): boolean {
     }
     case 'typesafe':
       return /^jev-[a-z0-9][a-z0-9.-]*$/i.test(candidate);
+    case 'openrouter':
+      // `author/slug`, opcionalmente `:free` y alias `~author/slug`.
+      return /^~?[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._:-]*$/i.test(candidate);
     case 'systemone':
       // Endpoint compatible: el catálogo real lo define el servidor.
       return /^[a-z0-9][a-z0-9._:/-]*$/i.test(candidate);
@@ -180,6 +307,8 @@ export interface ListModelsOptions {
   accountId?: string;
   apiKey?: string;
   search?: string;
+  /** Sólo modelos publicados como gratis. */
+  freeOnly?: boolean;
   timeoutMs?: number;
   signal?: AbortSignal;
 }
@@ -481,8 +610,89 @@ async function listTypesafe(options: ListModelsOptions, warnings: string[]): Pro
   }
 }
 
-async function listSystemone(options: ListModelsOptions, warnings: string[]): Promise<ModelInfo[]> {
-  if (!options.baseUrl) {
+/** Deriva `.../v1/models` desde un baseUrl que apunta a `.../v1/systemone`. */
+function openRouterListUrl(baseUrl: string | undefined): string {
+  const trimmed = (baseUrl ?? `${OPENROUTER_MODELS_BASE}/systemone`).trim().replace(/\/+$/, '');
+  if (trimmed.endsWith('/models')) return trimmed;
+  const systemone = trimmed.indexOf('/systemone');
+  if (systemone >= 0) return `${trimmed.slice(0, systemone)}/models`;
+  const v1 = trimmed.indexOf('/v1');
+  if (v1 >= 0) return `${trimmed.slice(0, v1 + 3)}/models`;
+  return `${trimmed}/models`;
+}
+
+function pricePerTokenToMillion(value: unknown): number | undefined {
+  const raw = typeof value === 'string' ? Number(value) : typeof value === 'number' ? value : Number.NaN;
+  if (!Number.isFinite(raw)) return undefined;
+  return Number((raw * 1_000_000).toFixed(6));
+}
+
+function mapOpenRouterModel(raw: unknown): ModelInfo | undefined {
+  if (!isRecord(raw)) return undefined;
+  const id = stringField(raw, ['id']);
+  if (!id) return undefined;
+
+  const architecture = isRecord(raw.architecture) ? raw.architecture : {};
+  const inputs = Array.isArray(architecture.input_modalities)
+    ? architecture.input_modalities.map((value) => String(value).toLowerCase())
+    : [];
+  const pricing = isRecord(raw.pricing) ? raw.pricing : {};
+
+  const contextRaw = raw.context_length;
+  const contextWindow =
+    typeof contextRaw === 'number' && contextRaw > 0 ? contextRaw : undefined;
+  const inputPricePerMillion = pricePerTokenToMillion(pricing.prompt);
+  const completionPrice = pricePerTokenToMillion(pricing.completion);
+  const free = inputPricePerMillion === 0 && (completionPrice === 0 || completionPrice === undefined);
+  const description = stringField(raw, ['description']);
+
+  return {
+    id,
+    name: stringField(raw, ['name']) ?? id,
+    provider: 'openrouter',
+    capabilities: {
+      images: inputs.includes('image'),
+      ...(inputs.includes('audio') ? { audio: true } : {}),
+      ...(inputs.includes('video') ? { video: true } : {}),
+    },
+    source: 'api',
+    ...(free ? { free: true } : {}),
+    ...(description !== undefined ? { description } : {}),
+    ...(contextWindow !== undefined ? { contextWindow } : {}),
+    ...(inputPricePerMillion !== undefined ? { inputPricePerMillion } : {}),
+  };
+}
+
+async function listOpenRouter(options: ListModelsOptions, warnings: string[]): Promise<ModelInfo[]> {
+  const staticModels = staticModelsFor('openrouter');
+  // El catálogo es público: se consulta con o sin key (con key suma límites mayores).
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (options.apiKey) headers.Authorization = `Bearer ${options.apiKey}`;
+
+  try {
+    const payload = await getJson(
+      `${openRouterListUrl(options.baseUrl)}?output_modalities=decisions`,
+      headers,
+      { timeoutMs: options.timeoutMs, signal: options.signal },
+    );
+    const items = extractArray(payload, ['data', 'result', 'models']);
+    if (!items) {
+      throw new M1Error('E_PROVIDER', 'la respuesta no contiene un listado de modelos', {
+        details: isRecord(payload) ? Object.keys(payload) : undefined,
+      });
+    }
+    return items
+      .map(mapOpenRouterModel)
+      .filter((model): model is ModelInfo => model !== undefined);
+  } catch (error) {
+    warnings.push(
+      `no se pudo listar modelos de OpenRouter (${errorMessage(error)}): se usa el catálogo estático`,
+    );
+    return staticModels;
+  }
+}
+
+async function listSystemone(options: ListModelsOptions, warnings: string[]): Promise<ModelInfo[]> {  if (!options.baseUrl) {
     warnings.push('provider systemone sin baseUrl: no se pudo consultar el catálogo');
     return [];
   }
@@ -526,6 +736,9 @@ export async function listModels(options: ListModelsOptions): Promise<ListModels
     case 'typesafe':
       models = await listTypesafe(options, warnings);
       break;
+    case 'openrouter':
+      models = await listOpenRouter(options, warnings);
+      break;
     case 'systemone':
       models = await listSystemone(options, warnings);
       break;
@@ -535,6 +748,8 @@ export async function listModels(options: ListModelsOptions): Promise<ListModels
     default:
       throw new M1Error('E_CONFIG', `kind de provider desconocido: ${String(options.kind)}`);
   }
+
+  if (options.freeOnly) models = models.filter((model) => model.free === true);
 
   return { models: filterBySearch(models, options.search), warnings };
 }

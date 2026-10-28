@@ -14,6 +14,7 @@ import { fail } from '../output';
 export interface ModelsFlags {
   provider?: string;
   search?: string;
+  free?: boolean;
   json?: boolean;
   config?: string;
 }
@@ -80,7 +81,9 @@ function sameModel(kind: ProviderKind, a: string, b: string): boolean {
   return a.trim().toLowerCase() === b.trim().toLowerCase();
 }
 
-function formatPrice(price: number | undefined): string {
+function formatPrice(model: ModelInfo): string {
+  if (model.free) return 'gratis';
+  const price = model.inputPricePerMillion;
   return price === undefined ? '—' : `$${price}/M`;
 }
 
@@ -98,7 +101,7 @@ function printModels(target: Target, models: ModelInfo[]): void {
     model.id,
     model.contextWindow !== undefined ? String(model.contextWindow) : '—',
     model.capabilities.images ? 'sí' : 'no',
-    formatPrice(model.inputPricePerMillion),
+    formatPrice(model),
     model.source,
   ]);
   const header = ['', 'id', 'ctx', 'vision', 'precio', 'source'];
@@ -169,6 +172,7 @@ export async function modelsCommand(flags: ModelsFlags): Promise<never> {
       accountId: target.providerCfg.accountId ?? secrets.accountId,
       apiKey: target.providerCfg.apiKey ?? secrets.apiKey,
       search: flags.search,
+      freeOnly: flags.free,
       timeoutMs: target.providerCfg.timeoutMs,
     });
     warnings.unshift(...target.warnings);

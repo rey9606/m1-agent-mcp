@@ -42,6 +42,7 @@ program
   .description('lista los modelos disponibles del provider')
   .option('--provider <alias>', 'provider a consultar (default: el de la config)')
   .option('--search <texto>', 'filtra por id/nombre/descripción')
+  .option('--free', 'sólo modelos publicados como gratis')
   .option('--json', 'salida JSON (contrato estable)')
   .option('-c, --config <file>', 'ruta a m1.config.json')
   .action(async (flags) => {

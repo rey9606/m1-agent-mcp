@@ -107,6 +107,16 @@ describe('m1 models', () => {
     expect(result.stdout).toMatch(/\*\s+mock/);
     expect(result.stdout).toContain('vision');
   });
+
+  it('--free filtra a modelos gratis (mock no tiene ninguno)', () => {
+    const dir = makeTmp();
+    const config = writeMockConfig(dir);
+
+    const result = cli(['models', '--free', '--json', '-c', config], { cwd: dir });
+
+    expect(result.status).toBe(0);
+    expect((JSON.parse(result.stdout) as { models: unknown[] }).models).toEqual([]);
+  });
 });
 
 describe('m1 model show', () => {

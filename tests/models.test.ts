@@ -61,6 +61,20 @@ describe('catálogo estático', () => {
   it('mock tiene su catálogo mínimo', () => {
     expect(staticModelsFor('mock').map((model) => model.id)).toEqual(['mock']);
   });
+
+  it('openrouter incluye los free y los modelos con visión', () => {
+    const models = staticModelsFor('openrouter');
+    const free = models.filter((model) => model.free);
+
+    expect(free.map((model) => model.id).sort()).toEqual([
+      'baseten/elephant-1:free',
+      'baseten/mammoth-1:free',
+      'respan/span-01-lite:free',
+    ]);
+    expect(free.every((model) => model.inputPricePerMillion === 0)).toBe(true);
+    expect(free.every((model) => model.capabilities.images === false)).toBe(true);
+    expect(models.find((model) => model.id === 'typesafe/jev-1.14')?.capabilities.images).toBe(true);
+  });
 });
 
 describe('capabilitiesFor', () => {
@@ -82,6 +96,18 @@ describe('capabilitiesFor', () => {
     expect(capabilitiesFor('mock', 'mock')).toEqual({ images: true });
     expect(capabilitiesFor('systemone', 'local-decision')).toBeUndefined();
   });
+
+  it('openrouter distingue texto puro, visión y omni', () => {
+    expect(capabilitiesFor('openrouter', 'baseten/mammoth-1:free')).toEqual({ images: false });
+    expect(capabilitiesFor('openrouter', 'respan/span-01-lite:free')).toEqual({ images: false });
+    expect(capabilitiesFor('openrouter', 'typesafe/jev-1.14')).toEqual({ images: true });
+    expect(capabilitiesFor('openrouter', 'desconocido/modelo')).toEqual({ images: true });
+    expect(capabilitiesFor('openrouter', 'cloudflare/clef-omni')).toEqual({
+      images: true,
+      audio: true,
+      video: true,
+    });
+  });
 });
 
 describe('isValidModelId', () => {
@@ -92,6 +118,9 @@ describe('isValidModelId', () => {
     expect(isValidModelId('typesafe', 'jev-2.0.0')).toBe(true);
     expect(isValidModelId('systemone', 'cualquier-modelo')).toBe(true);
     expect(isValidModelId('mock', 'mock')).toBe(true);
+    expect(isValidModelId('openrouter', 'typesafe/jev-1.14')).toBe(true);
+    expect(isValidModelId('openrouter', 'baseten/mammoth-1:free')).toBe(true);
+    expect(isValidModelId('openrouter', '~typesafe/jev-latest')).toBe(true);
   });
 
   it('rechaza ids con forma inválida', () => {
@@ -99,6 +128,8 @@ describe('isValidModelId', () => {
     expect(isValidModelId('typesafe', 'clef-flash')).toBe(false);
     expect(isValidModelId('mock', 'otro')).toBe(false);
     expect(isValidModelId('systemone', 'con espacios')).toBe(false);
+    expect(isValidModelId('openrouter', 'sin-slash')).toBe(false);
+    expect(isValidModelId('openrouter', 'con espacios/modelo')).toBe(false);
   });
 });
 
@@ -270,6 +301,105 @@ describe('listModels: typesafe', () => {
 
     expect(models).toEqual(staticModelsFor('typesafe'));
     expect(warnings[0]).toContain('401');
+  });
+});
+
+describe('listModels: openrouter', () => {
+  it('consulta output_modalities=decisions y mapea precio/contexto/modalidades', async () => {
+    const fetchMock = stubFetch(() =>
+      jsonResponse({
+        data: [
+          {
+            id: 'typesafe/jev-1.14',
+            name: 'TypeSafe: Jev 1.14',
+            context_length: 262_144,
+            architecture: { input_modalities: ['text', 'image'], output_modalities: ['decisions'] },
+            pricing: { prompt: '0.000000042', completion: '0' },
+          },
+          {
+            id: 'baseten/mammoth-1:free',
+            name: 'Baseten: Mammoth 1 (free)',
+            context_length: 16_384,
+            architecture: { input_modalities: ['text'], output_modalities: ['decisions'] },
+            pricing: { prompt: '0', completion: '0' },
+          },
+        ],
+      }),
+    );
+
+    const { models, warnings } = await listModels({ kind: 'openrouter', apiKey: 'or-key' });
+
+    expect(warnings).toEqual([]);
+    expect(models.map((model) => model.id)).toEqual([
+      'typesafe/jev-1.14',
+      'baseten/mammoth-1:free',
+    ]);
+    expect(models[0]).toMatchObject({
+      provider: 'openrouter',
+      contextWindow: 262_144,
+      inputPricePerMillion: 0.042,
+      capabilities: { images: true },
+      source: 'api',
+    });
+    expect(models[1]).toMatchObject({
+      inputPricePerMillion: 0,
+      free: true,
+      capabilities: { images: false },
+    });
+
+    const { url, init } = callOf(fetchMock);
+    expect(url).toBe('https://openrouter.ai/api/v1/models?output_modalities=decisions');
+    expect(init.headers).toMatchObject({ Authorization: 'Bearer or-key' });
+  });
+
+  it('deriva la URL de listado desde un baseUrl /systemone', async () => {
+    const fetchMock = stubFetch(() => jsonResponse({ data: [] }));
+
+    await listModels({
+      kind: 'openrouter',
+      baseUrl: 'https://openrouter.ai/api/v1/systemone',
+    });
+
+    expect(callOf(fetchMock).url).toBe(
+      'https://openrouter.ai/api/v1/models?output_modalities=decisions',
+    );
+    // Sin key el catálogo es público: no manda Authorization.
+    expect(callOf(fetchMock).init.headers).not.toMatchObject({
+      Authorization: expect.any(String),
+    });
+  });
+
+  it('con freeOnly deja sólo los modelos gratis', async () => {
+    stubFetch(() =>
+      jsonResponse({
+        data: [
+          {
+            id: 'typesafe/jev-1.14',
+            architecture: { input_modalities: ['text', 'image'] },
+            pricing: { prompt: '0.000000042', completion: '0' },
+          },
+          {
+            id: 'baseten/mammoth-1:free',
+            architecture: { input_modalities: ['text'] },
+            pricing: { prompt: '0', completion: '0' },
+          },
+        ],
+      }),
+    );
+
+    const { models } = await listModels({ kind: 'openrouter', freeOnly: true });
+
+    expect(models.map((model) => model.id)).toEqual(['baseten/mammoth-1:free']);
+  });
+
+  it('ante 403 cae al catálogo estático con warning', async () => {
+    stubFetch(() => jsonResponse({ error: 'Access denied by security policy.' }, 403));
+
+    const { models, warnings } = await listModels({ kind: 'openrouter' });
+
+    expect(models).toEqual(staticModelsFor('openrouter'));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('403');
   });
 });
 

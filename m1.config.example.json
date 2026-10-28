@@ -12,6 +12,11 @@
       "model": "jev-latest",
       "apiKeyEnv": "TYPESAFE_API_KEY"
     },
+    "or": {
+      "kind": "openrouter",
+      "model": "baseten/mammoth-1:free",
+      "apiKeyEnv": "OPENROUTER_KEY"
+    },
     "local": {
       "kind": "systemone",
       "baseUrl": "http://localhost:8000/v1/systemone",

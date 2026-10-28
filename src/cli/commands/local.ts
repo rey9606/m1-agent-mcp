@@ -1,6 +1,12 @@
 import { loadConfig, resolveProvider } from '../../config/config';
 import { M1Error } from '../../core/errors';
-import { buildLaunchSpec, formatCommand, localStatus, stopLocalServer } from '../../local/lifecycle';
+import {
+  buildLaunchSpec,
+  ensureLocalEndpoint,
+  formatCommand,
+  localStatus,
+  stopLocalServer,
+} from '../../local/lifecycle';
 import type { ProviderConfig } from '../../providers/types';
 import { fail } from '../output';
 
@@ -19,6 +25,35 @@ function resolveLocalConfig(flags: LocalFlags): { alias: string; cfg: ProviderCo
     });
   }
   return { alias, cfg };
+}
+
+export async function localStartCommand(flags: LocalFlags): Promise<never> {
+  try {
+    const { alias, cfg } = resolveLocalConfig(flags);
+    const result = await ensureLocalEndpoint({
+      alias,
+      cfg,
+      autoStart: 'always',
+      interactive: false,
+      onStatus: (line) => {
+        if (!flags.json) process.stderr.write(`  … ${line}\n`);
+      },
+    });
+
+    if (flags.json) {
+      process.stdout.write(JSON.stringify({ ok: true, alias, ...result }) + '\n');
+    } else {
+      process.stdout.write(`  ✓ ${alias}   running   ${result.baseUrl}\n`);
+      if (result.pid !== undefined) process.stdout.write(`    pid: ${result.pid}\n`);
+      if (result.logPath) process.stdout.write(`    log: ${result.logPath}\n`);
+      process.stdout.write(
+        `    queda corriendo: cerralo desde su consola o con \`m1 local stop --provider ${alias}\`\n`,
+      );
+    }
+    process.exit(0);
+  } catch (e) {
+    fail(e, Boolean(flags.json));
+  }
 }
 
 export async function localStatusCommand(flags: LocalFlags): Promise<never> {

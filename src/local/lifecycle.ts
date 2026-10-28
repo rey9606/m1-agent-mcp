@@ -172,6 +172,10 @@ export async function probeLocal(baseUrl: string, options: ProbeOptions = {}): P
 export interface LaunchSpec {
   command: string;
   args: string[];
+  /** Puerto efectivo (para descubrir el PID por socket en modo consola). */
+  port?: number;
+  /** Abrir una consola propia para el servidor. */
+  console?: boolean;
 }
 
 export function formatCommand(spec: LaunchSpec): string {
@@ -224,7 +228,12 @@ export function buildLaunchSpec(
     ensureFlag(args, '--host', opts.host);
     if (cfg.model) ensureFlag(args, '--alias', cfg.model);
   }
-  return { command, args };
+  return {
+    command,
+    args,
+    port: opts.port,
+    console: launch.console ?? process.platform === 'win32',
+  };
 }
 
 function safeAlias(alias: string): string {
@@ -356,9 +365,12 @@ function quoteWindows(value: string): string {
  * Devuelve `false` si WMI no está disponible (se usa el spawn directo).
  */
 function launchViaWmi(command: string, args: string[]): boolean {
-  if (process.platform !== 'win32') return false;
+  return launchRawViaWmi([command, ...args].map(quoteWindows).join(' '));
+}
 
-  const commandLine = [command, ...args].map(quoteWindows).join(' ');
+/** Como `launchViaWmi`, pero recibe la línea de comandos ya armada. */
+function launchRawViaWmi(commandLine: string): boolean {
+  if (process.platform !== 'win32') return false;
   const script = [
     "$ProgressPreference='SilentlyContinue'",
     "$ErrorActionPreference='Stop'",
@@ -386,6 +398,78 @@ function launchViaWmi(command: string, args: string[]): boolean {
   return result.status === 0;
 }
 
+/**
+ * Lanza el servidor en una consola propia (minimizada).
+ *
+ * Usa `start` (crea consola nueva) a través de WMI, así el proceso no pertenece
+ * al job de `pnpm`/`tsx` y sobrevive a la CLI. Los logs van al archivo vía
+ * `--log-file` (llama.cpp) para no perderlos aunque la ventana se cierre.
+ */
+function launchInConsole(spec: LaunchSpec, logPath: string): boolean {
+  if (process.platform !== 'win32') return false;
+  const args = [...spec.args];
+  if (isLlamaServer(spec.command)) {
+    const hadLogFile = args.some((arg) => arg === '--log-file' || arg.startsWith('--log-file='));
+    ensureFlag(args, '--log-file', logPath);
+    // Sin esto, el server detecta consola y mete secuencias ANSI en el archivo.
+    if (!hadLogFile) ensureFlag(args, '--log-colors', 'off');
+  }
+  const title = `m1 ${basename(spec.command)}${spec.port ? ` :${spec.port}` : ''}`.replaceAll('"', '');
+  const commandLine = `cmd.exe /c start "${title}" /min ${[spec.command, ...args]
+    .map(quoteWindows)
+    .join(' ')}`;
+  return launchRawViaWmi(commandLine);
+}
+
+/** PID que escucha en `port` (Windows). Sirve cuando el arranque no expone el pid. */
+function findListeningPid(port: number): number | undefined {
+  if (process.platform !== 'win32') return undefined;
+  const result = spawnSync('netstat', ['-ano', '-p', 'tcp'], {
+    encoding: 'utf8',
+    windowsHide: true,
+    timeout: 10_000,
+  });
+  if (result.status !== 0 || !result.stdout) return undefined;
+  for (const line of result.stdout.split(/\r?\n/u)) {
+    if (!/LISTENING/iu.test(line)) continue;
+    const cols = line.trim().split(/\s+/u);
+    const local = cols[1] ?? '';
+    const pid = Number.parseInt(cols[cols.length - 1] ?? '', 10);
+    if (local.endsWith(`:${port}`) && Number.isInteger(pid) && pid > 0) return pid;
+  }
+  return undefined;
+}
+
+async function waitForListeningPid(
+  port: number,
+  timeoutMs = 3_000,
+): Promise<number | undefined> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const pid = findListeningPid(port);
+    if (pid !== undefined) return pid;
+    if (Date.now() >= deadline) return undefined;
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+}
+
+function killProcessTree(pid: number): boolean {
+  if (process.platform === 'win32') {
+    const result = spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], {
+      windowsHide: true,
+      encoding: 'utf8',
+      timeout: 15_000,
+    });
+    if (result.status === 0) return true;
+  }
+  try {
+    process.kill(pid);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function readSpawnedPid(pidPath: string, timeoutMs: number): Promise<number> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
@@ -402,6 +486,17 @@ async function readSpawnedPid(pidPath: string, timeoutMs: number): Promise<numbe
 
 async function spawnServer(spec: LaunchSpec, logPath: string): Promise<SpawnedServer> {
   mkdirSync(dirname(logPath), { recursive: true });
+
+  if (spec.console && launchInConsole(spec, logPath)) {
+    return {
+      exitCode: null,
+      kill: () => {
+        const pid = spec.port !== undefined ? findListeningPid(spec.port) : undefined;
+        if (pid !== undefined) killProcessTree(pid);
+      },
+    };
+  }
+
   const dir = dirname(logPath);
   const helperPath = join(dir, '.m1-spawn-helper.mjs');
   writeFileSync(helperPath, SPAWN_HELPER, 'utf8');
@@ -498,6 +593,8 @@ export interface EnsureLocalResult {
   baseUrl: string;
   started: boolean;
   port?: number;
+  /** PID del servidor (en modo consola se descubre por el puerto). */
+  pid?: number;
   logPath?: string;
   warnings: string[];
 }
@@ -609,9 +706,10 @@ async function startAndWait(
     throw error;
   }
 
-  if (child.pid !== undefined) {
+  const pid = child.pid ?? (await waitForListeningPid(options.port));
+  if (pid !== undefined) {
     writeLocalRecord(alias, stateDir, {
-      pid: child.pid,
+      pid,
       port: options.port,
       baseUrl: runtimeBase,
       command: spec.command,
@@ -626,6 +724,7 @@ async function startAndWait(
     baseUrl: runtimeBase,
     started: true,
     port: options.port,
+    ...(pid !== undefined ? { pid } : {}),
     logPath,
     warnings: modelWarnings(ready, cfg.model),
   };
@@ -653,10 +752,12 @@ export async function ensureLocalEndpoint(options: EnsureLocalOptions): Promise<
 
   const initial = await runtime.probe(baseUrl, { healthPath: launch.healthPath });
   if (initial.state === 'running') {
+    const running = readLocalRecord(options.alias, stateDir);
     return {
       baseUrl,
       started: false,
       port: endpoint.port,
+      ...(running && runtime.isAlive(running.pid) ? { pid: running.pid } : {}),
       warnings: modelWarnings(initial, cfg.model),
     };
   }
@@ -706,7 +807,7 @@ export async function ensureLocalEndpoint(options: EnsureLocalOptions): Promise<
   }
 
   const preferredPort = launch.port ?? endpoint.port;
-  const policy = options.autoStart ?? launch.autoStart ?? 'ask';
+  const policy = options.autoStart ?? launch.autoStart ?? 'always';
   const candidate = buildLaunchSpec(cfg, { port: preferredPort, host: endpoint.host });
 
   if (policy === 'never') {
@@ -799,7 +900,13 @@ export function stopLocalServer(alias: string, stateDir = localStateDir()): Stop
   }
 
   try {
-    process.kill(record.pid);
+    if (!killProcessTree(record.pid)) {
+      return {
+        stopped: false,
+        pid: record.pid,
+        reason: 'no se pudo terminar el proceso',
+      };
+    }
   } catch (error) {
     return {
       stopped: false,

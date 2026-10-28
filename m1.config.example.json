@@ -36,7 +36,8 @@
         "args": ["-hf", "LiquidAI/d1-2B-GGUF:Q8_0", "-b", "8192", "-ub", "8192"],
         "port": 9931,
         "startTimeoutMs": 240000,
-        "autoStart": "ask"
+        "autoStart": "always",
+        "console": true
       }
     },
     "mock": {

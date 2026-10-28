@@ -215,6 +215,21 @@ describe('parseConfig: launch local', () => {
     expect(error.message).toContain('loopback');
   });
 
+  it('parsea launch.console y rechaza valores no booleanos', () => {
+    const config = parseConfig({
+      providers: { liquid: { ...base, launch: { args: ['-hf', 'repo'], console: false } } },
+    });
+    expect(config.providers.liquid?.launch?.console).toBe(false);
+
+    const error = catchM1(() =>
+      parseConfig({
+        providers: { liquid: { ...base, launch: { args: ['-hf', 'repo'], console: 'yes' } } },
+      }),
+    );
+    expect(error.code).toBe('E_CONFIG');
+    expect(error.message).toContain('boolean');
+  });
+
   it('rechaza autoStart inválido', () => {
     const error = catchM1(() =>
       parseConfig({

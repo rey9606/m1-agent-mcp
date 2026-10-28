@@ -5,7 +5,7 @@ import { recipeSchemaCommand, recipeValidateCommand } from './commands/recipe';
 import { authRemoveCommand, authSetCommand, authStatusCommand } from './commands/auth';
 import { doctorCommand } from './commands/doctor';
 import { modelResetCommand, modelShowCommand, modelUseCommand, modelsCommand } from './commands/models';
-import { localStatusCommand, localStopCommand } from './commands/local';
+import { localStartCommand, localStatusCommand, localStopCommand } from './commands/local';
 
 const program = new Command();
 
@@ -28,7 +28,7 @@ program
   .option('--provider <alias>', 'provider a usar (override de la config)')
   .option('--model <id>', 'modelo a usar (override)')
   .option('--timeout <ms>', 'timeout por etapa (no del run completo)')
-  .option('--local-start <mode>', 'ask|always|never: levanta el modelo local si no responde')
+  .option('--local-start <mode>', 'ask|always|never: levanta el modelo local si no responde (default: always)')
   .option('--dry-run', 'arma el request y no llama al proveedor')
   .option('--print-request', 'imprime el/los request(s) que se enviarían (implica --dry-run)')
   .option('--trace', 'muestra las etapas por stderr')
@@ -95,6 +95,16 @@ local
   .option('-c, --config <file>', 'ruta a m1.config.json')
   .action(async (flags) => {
     await localStatusCommand(flags);
+  });
+
+local
+  .command('start')
+  .description('levanta el servidor local si no responde y lo deja corriendo')
+  .option('--provider <alias>', 'provider local a levantar (default: el de la config)')
+  .option('--json', 'salida JSON')
+  .option('-c, --config <file>', 'ruta a m1.config.json')
+  .action(async (flags) => {
+    await localStartCommand(flags);
   });
 
 local

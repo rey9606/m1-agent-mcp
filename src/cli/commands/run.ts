@@ -120,6 +120,12 @@ export async function runCommand(recipePath: string, flags: RunFlags): Promise<n
       if (local.baseUrl && local.baseUrl !== providerCfg.baseUrl) {
         providerCfg = { ...providerCfg, baseUrl: local.baseUrl };
       }
+      if (!json && local.started) {
+        const pid = local.pid !== undefined ? ` (pid ${local.pid})` : '';
+        process.stderr.write(
+          `  ✓ servidor local listo en ${local.baseUrl}${pid} — queda corriendo; apagalo con \`m1 local stop --provider ${alias}\`\n`,
+        );
+      }
 
       const secrets = resolveSecrets(alias, providerCfg);
       const merged = {

@@ -78,8 +78,14 @@ export interface LocalLaunchConfig {
   healthPath?: string;
   /** Espera máxima a que el servidor quede listo. Default: 180000. */
   startTimeoutMs?: number;
-  /** `ask` pregunta en TTY; `always` arranca sin preguntar; `never` no arranca. */
+  /** `always` (default) arranca si no responde; `ask` pregunta en TTY; `never` no arranca. */
   autoStart?: LocalAutoStart;
+  /**
+   * Abre una consola propia para el servidor (Windows, default `true`).
+   * El servidor queda vivo entre runs y el usuario lo cierra desde esa consola
+   * o con `m1 local stop`.
+   */
+  console?: boolean;
 }
 
 export interface ProviderConfig {

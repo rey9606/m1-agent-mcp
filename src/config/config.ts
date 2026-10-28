@@ -105,6 +105,13 @@ function parseLaunch(alias: string, raw: unknown): LocalLaunchConfig {
     launch.autoStart = p.autoStart;
   }
 
+  if (p.console !== undefined) {
+    if (typeof p.console !== 'boolean') {
+      throw new M1Error('E_CONFIG', `provider "${alias}": launch.console debe ser boolean`);
+    }
+    launch.console = p.console;
+  }
+
   return launch;
 }
 

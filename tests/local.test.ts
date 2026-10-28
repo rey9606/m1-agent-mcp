@@ -137,6 +137,8 @@ describe('buildLaunchSpec', () => {
         '--alias',
         'lfm2-d1',
       ],
+      port: 9932,
+      console: process.platform === 'win32',
     });
   });
 
@@ -246,19 +248,40 @@ describe('ensureLocalEndpoint', () => {
     expect((error as M1Error).hint).toContain('llama-server');
   });
 
-  it('sin TTY no pregunta y falla con la política ask', async () => {
-    const runtime = fakeRuntime();
+  it('sin TTY no pregunta: con ask falla y con el default arranca', async () => {
+    const askRuntime = fakeRuntime();
     const error = await ensureLocalEndpoint({
+      alias: 'liquid',
+      cfg: localCfg(9931),
+      autoStart: 'ask',
+      interactive: false,
+      stateDir: makeStateDir(),
+      runtime: askRuntime,
+    }).catch((e: unknown) => e);
+
+    expect((error as M1Error).code).toBe('E_PROVIDER');
+    expect(askRuntime.confirm).not.toHaveBeenCalled();
+    expect(askRuntime.spawnServer).not.toHaveBeenCalled();
+
+    // Default (always): arranca sin preguntar aunque no haya TTY.
+    let probes = 0;
+    const defaultRuntime = fakeRuntime({
+      probe: vi.fn(async () =>
+        probes++ === 0 ? { state: 'down' as const } : { state: 'running' as const },
+      ),
+    });
+    const started = await ensureLocalEndpoint({
       alias: 'liquid',
       cfg: localCfg(9931),
       interactive: false,
       stateDir: makeStateDir(),
-      runtime,
+      runtime: defaultRuntime,
     }).catch((e: unknown) => e);
 
-    expect((error as M1Error).code).toBe('E_PROVIDER');
-    expect(runtime.confirm).not.toHaveBeenCalled();
-    expect(runtime.spawnServer).not.toHaveBeenCalled();
+    expect(started).not.toBeInstanceOf(M1Error);
+    expect((started as { started: boolean }).started).toBe(true);
+    expect(defaultRuntime.confirm).not.toHaveBeenCalled();
+    expect(defaultRuntime.spawnServer).toHaveBeenCalledOnce();
   });
 
   it('arranca, espera el health y registra el servidor', async () => {

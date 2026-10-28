@@ -178,11 +178,12 @@ pnpm m1 run examples/copy-checker.json --provider liquid \
 
 Antes de llamar, `m1` sondea `GET /health` en `baseUrl`:
 
-- Si el servidor ya responde, lo usa (no levanta nada).
+- Si el servidor ya responde, lo usa: no levanta nada (los runs siguientes son inmediatos).
 - Si hay un servidor registrado en otro puerto, lo reutiliza.
-- Si no responde y hay TTY, pregunta: `¿Levanto llama-server en el puerto 9931? [Y/n]`.
-- `--local-start always` arranca sin preguntar; `--local-start never` falla con el comando exacto.
-- En `--json` o sin TTY nunca se pregunta: falla salvo `always`.
+- Si no responde, **lo levanta solo** (`launch.autoStart` default: `always`).
+- `--local-start ask` pregunta en TTY; `--local-start never` falla con el comando exacto.
+- **El servidor queda corriendo al terminar el run.** No se apaga solo: el usuario decide. Cerrá su consola o usá `m1 local stop`.
+- En Windows se abre una **consola propia** (minimizada) titulada `m1 llama-server…`; `"launch": { "console": false }` la oculta. El log se sigue escribiendo en el archivo (`--log-file`).
 
 **Elección de puerto:** parte de `launch.port` (9931). Si está ocupado por otro proceso, prueba 9932, 9933… hasta encontrar uno libre, arranca ahí y reescribe `baseUrl` en memoria. No hace falta tocar la config.
 
@@ -191,6 +192,7 @@ En Windows el arranque pasa por WMI (`Win32_Process.Create`): así el servidor n
 El PID, puerto y log se guardan en `~/.cache/m1-agent/local/liquid.json` (o `$M1_CACHE_DIR/local`). Eso permite reutilizar el servidor entre runs y administrarlo:
 
 ```bash
+pnpm m1 local start --provider liquid   # verificas y, si no está, lo levanta
 pnpm m1 local status --provider liquid
 pnpm m1 local stop --provider liquid
 # log: ~/.cache/m1-agent/local/logs/liquid.log
@@ -210,13 +212,15 @@ Detalle de `launch`:
     "args": ["-hf", "LiquidAI/d1-2B-GGUF:Q8_0", "-b", "8192", "-ub", "8192"],
     "port": 9931,
     "startTimeoutMs": 240000,
-    "autoStart": "ask"
+    "autoStart": "always",
+    "console": true
   }
 }
 ```
 
 - `args` admite `{port}`, `{host}`, `{model}` y `{baseUrl}`. Para `llama-server` se agregan `--port`, `--host` y `--alias <model>` si faltan; el alias hace que `/v1/models` publique el id que usa la receta.
-- `autoStart`: `ask` (default), `always` o `never`.
+- `autoStart`: `always` (default), `ask` o `never`.
+- `console`: en Windows abre una consola propia para el servidor (default `true`). Al cerrarla se apaga; el log queda igual en `logs/<alias>.log`.
 - `launch` sólo aplica a `kind: systemone` con `baseUrl` loopback.
 - **Imágenes:** agregá el proyector (`--mmproj ...`) y un `-ub` suficiente. Sin `mmproj`, el servidor devuelve 501 para imágenes. d1-2B reserva como máximo la mitad de `-ub` por imagen. Con `llama.cpp` además hay que usar `"imageFormat": "dataUrl"` y cubrir los tokens de la imagen en `-b`/`-ub` (900×600 ≈ 1,8k tokens).
 - **Costo por pregunta:** `/v1/systemone` procesa una tarea por pregunta y re-codifica la imagen en cada una. Medido con `d1-omni-600M` Q8_0 en CPU: 384×384 + 4 preguntas ≈ 9 s; 900×600 + 4 preguntas ≈ 108 s (+ `diagnostico` ≈ 130 s). Para recetas multimodales usá `timeoutMs`/`--timeout` de 300000; el default de 60 s corta antes.

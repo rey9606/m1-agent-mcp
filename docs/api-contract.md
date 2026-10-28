@@ -1,4 +1,4 @@
-# Contrato de API: Clef (Cloudflare) y JEV (TypeSafe)
+# Contrato de API: Clef (Cloudflare), JEV (TypeSafe) y OpenRouter
 
 Contrato tal como lo implementa el repo (`src/providers/`). No reemplaza la documentación oficial de cada proveedor: describe lo que el motor envía y lo que acepta de vuelta. Cualquier endpoint que cumpla este contrato puede usarse como `kind: "systemone"` sin escribir código.
 
@@ -86,6 +86,39 @@ Detalles (`src/providers/typesafe.ts`):
 - Si la receta resuelve imágenes para una etapa, falla con `E_PROVIDER` ("JEV no soporta imágenes") antes de hacer la llamada. No las descarta silenciosamente.
 - Mismo mecanismo de unwrap y de validación de respuesta que Cloudflare.
 
+## OpenRouter (modelos de decisión)
+
+| Dato | Valor |
+| --- | --- |
+| URL | `https://openrouter.ai/api/v1/systemone` (override con `provider.baseUrl`) |
+| Auth | `Authorization: Bearer <OPENROUTER_KEY>` |
+| Modelo por defecto | `typesafe/jev-1.14` |
+| Timeout por defecto | 60 s |
+| Imágenes | Sí, según el modelo (los `:free` actuales son sólo texto) |
+| Catálogo | `GET https://openrouter.ai/api/v1/models?output_modalities=decisions` |
+
+Detalles (`src/providers/openrouter.ts`):
+
+- Usa la superficie System One (`/systemone`), no `chat/completions`: mismo body `{ model, state, questions }` y misma respuesta `{ answers, usage, model }`.
+- La key se resuelve con `provider.apiKey` > `provider.apiKeyEnv` > `OPENROUTER_KEY` > `credentials.json` (el merge final lo hace la CLI).
+- **Las imágenes no van en un campo `images` de nivel superior** (OpenRouter responde 400). Se insertan en `state` como partes:
+
+  ```json
+  {
+    "model": "typesafe/jev-1.14",
+    "state": [
+      "texto del state",
+      { "type": "image_url", "image_url": { "url": "data:image/png;base64,iVBORw0KGgo..." } }
+    ],
+    "questions": { "q1": { "type": "noul", "instructions": "..." } }
+  }
+  ```
+
+  Si `state` es string, se envuelve en `[state, ...imágenes]`; si es array, se hace append; si es objeto, la CLI falla con `E_CONFIG` antes de llamar (no se puede preservar la semántica del objeto).
+- `m1 models --provider or` lista el catálogo vivo y cae al catálogo estático si la API no responde (403/red). `--free` filtra a los publicados sin costo.
+- Ids válidos: `author/slug`, alias `~author/slug` y variantes `:free` (ej. `typesafe/jev-1.14`, `~typesafe/jev-latest`, `baseten/mammoth-1:free`).
+- Los modelos `:free` comparten cuota y rate limits más estrictos que los pagos. `402` indica falta de créditos para un modelo pago.
+
 ## SystemOne (endpoint compatible)
 
 | Dato | Valor |
@@ -159,6 +192,7 @@ Es el adaptador genérico: mismo body, misma respuesta, `baseUrl` configurable y
 ## Imágenes
 
 - Formato en el body: `{ "content_type": "image/png", "base64": "<datos>" }`. No se envía el prefijo `data:`.
+- OpenRouter es la excepción: el provider las convierte a partes `{ "type": "image_url", "image_url": { "url": "data:<content_type>;base64,<datos>" } }` dentro de `state` (ver sección OpenRouter).
 - Tipos aceptados por la CLI: PNG, JPEG y WebP, detectados por magic bytes. Un `content_type` declarado que no coincide con el contenido produce `E_INPUT`.
 - El `base64` se genera desde el archivo o se toma de la entrada; el motor estima el body como `bytes_decodificados * 4/3 + JSON(vars)` y lo compara contra el tope de 13 MiB.
 
@@ -177,11 +211,13 @@ Es el adaptador genérico: mismo body, misma respuesta, `baseUrl` configurable y
 
 Hints por status:
 
-| Status | Cloudflare | TypeSafe | SystemOne |
-| --- | --- | --- | --- |
-| 401/403 | token inválido o sin permiso de Workers AI | API key inválida o sin permisos | el endpoint rechazó las credenciales |
-| 404 | accountId o modelo no habilitado | — | revisar `baseUrl` |
-| 429 | rate limit: esperar o bajar concurrencia | rate limit | rate limit del endpoint |
+| Status | Cloudflare | TypeSafe | OpenRouter | SystemOne |
+| --- | --- | --- | --- | --- |
+| 400 | — | — | modelo o formato de `state`/imágenes inválido | — |
+| 401/403 | token inválido o sin permiso de Workers AI | API key inválida o sin permisos | `OPENROUTER_KEY` inválida o sin permisos | el endpoint rechazó las credenciales |
+| 402 | — | — | la cuenta no tiene créditos para ese modelo | — |
+| 404 | accountId o modelo no habilitado | — | — | revisar `baseUrl` |
+| 429 | rate limit: esperar o bajar concurrencia | rate limit | rate limit (los `:free` son más limitados) | rate limit del endpoint |
 
 ## Límites y costos
 

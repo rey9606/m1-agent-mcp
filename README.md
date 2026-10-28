@@ -14,7 +14,7 @@ CLI y motor de flujo para **agentes de decisión** definidos en JSON. No es un L
 pnpm install
 ```
 
-Crear el archivo de entorno y completar las credenciales de Cloudflare:
+Crear el archivo de entorno y completar las credenciales de los proveedores que vayas a usar:
 
 ```bash
 cp .env.example .env          # PowerShell: Copy-Item .env.example .env
@@ -23,6 +23,7 @@ cp .env.example .env          # PowerShell: Copy-Item .env.example .env
 ```dotenv
 CLOUDFLARE_ACCOUNT_ID=<account-id>
 CLOUDFLARE_API_TOKEN=<api-token>
+OPENROUTER_KEY=<sk-or-...>    # opcional, provider "or"
 ```
 
 Crear la configuración local a partir del ejemplo:
@@ -80,7 +81,7 @@ pnpm m1 run examples/copy-checker.json --state "texto" --print-request
 | `m1 auth set <alias>` | Guarda credenciales del provider | `--token <key>`, `--account-id <id>`, `--env <VAR>`, `--json` |
 | `m1 auth status` | Muestra providers configurados sin secretos | `--json`, `-c, --config <file>` |
 | `m1 auth remove <alias>` (alias `rm`) | Borra credenciales guardadas | `--json` |
-| `m1 models` | Lista los modelos disponibles del provider (Cloudflare: sólo Clef) | `--provider <alias>`, `--search <texto>`, `--json`, `-c, --config <file>` |
+| `m1 models` | Lista los modelos disponibles del provider (Cloudflare: sólo Clef) | `--provider <alias>`, `--search <texto>`, `--free`, `--json`, `-c, --config <file>` |
 | `m1 model show` | Muestra el modelo efectivo, su fuente y capacidades (visión/audio/video) | `--provider <alias>`, `--json`, `-c, --config <file>` |
 | `m1 model use <id>` | Fija el modelo del provider | `--provider <alias>`, `--project`, `--json`, `-c, --config <file>` |
 | `m1 model reset` | Borra la preferencia de modelo del usuario | `--provider <alias>`, `--json`, `-c, --config <file>` |
@@ -147,12 +148,17 @@ Puntos clave:
 | --- | --- | --- | --- | --- |
 | `cloudflare` | `@cf/cloudflare/clef-flash` | `https://api.cloudflare.com/client/v4/accounts/<accountId>/ai/run/@cf/cloudflare/<model>` | Sí (los 3 Clef) | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` |
 | `typesafe` | `jev-latest` | `https://api.typesafe.ai/v1/systemone` | No | `TYPESAFE_API_KEY` |
+| `openrouter` | `typesafe/jev-1.14` | `https://openrouter.ai/api/v1/systemone` | Sí (según modelo) | `OPENROUTER_KEY` |
 | `systemone` | `local-decision` (configurable) | `baseUrl` obligatorio | Sí | opcional (`apiKeyEnv` o `SYSTEMONE_API_KEY`) |
 | `mock` | `mock` | — | Ignora | — |
 
 La precedencia de secretos es: `apiKey`/`accountId` explícitos en la config > variable de entorno (`apiKeyEnv`, y `CLOUDFLARE_ACCOUNT_ID` sólo para `kind: cloudflare`) > `~/.config/m1-agent/credentials.json`. Los valores vacíos se ignoran.
 
 Modelos Clef disponibles (todos con visión): `@cf/cloudflare/clef` (65.536 ctx, $0,24/M), `@cf/cloudflare/clef-flash` (24.576 ctx, $0,038/M) y `@cf/cloudflare/clef-omni` (65.536 ctx, $0,15/M, además audio/video). `m1 models` los consulta en vivo; `m1 model use <id>` fija el default.
+
+OpenRouter expone modelos de decisión (`output_modalities=decisions`) con el mismo contrato System One. `m1 models --provider or` consulta el catálogo en vivo y `m1 models --provider or --free` deja sólo los gratuitos (al 2026-10-28: `baseten/mammoth-1:free`, `baseten/elephant-1:free`, `respan/span-01-lite:free`; son sólo texto). El alias de ejemplo `or` usa `baseten/mammoth-1:free`; para visión conviene `typesafe/jev-1.14` o `cloudflare/clef-*`. Los modelos `:free` tienen rate limits más bajos. Detalle del contrato en [docs/api-contract.md](docs/api-contract.md).
+
+En OpenRouter las imágenes viajan dentro de `state` como partes `image_url` (no en un campo `images` de nivel superior). Por eso, al usar `--image` el `state` debe ser string o array; un `state` objeto produce `E_CONFIG` antes de llamar.
 
 Orden de selección del provider: `--provider` > `provider` de la receta > `default` de `m1.config.json`.
 

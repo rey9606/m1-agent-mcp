@@ -13,7 +13,7 @@ No hay capas separadas por configuración: `vitest.config.ts:6` incluye `tests/*
 | Tooling | `tests/tooling/precommit.test.ts` | Ejecuta `scripts/precommit-guards.mjs` en repos git temporales y `scripts/validate-recipes.mjs` contra recetas temporales | Ninguna (git local) |
 | E2E de CLI | `tests/cli.test.ts` | Spawnea la CLI real (`node node_modules/tsx/dist/cli.mjs src/cli/index.ts`) contra configs temporales con provider `mock` | Ninguna |
 | Integración HTTP | `tests/integration/systemone.test.ts` | Corre la CLI completa contra un `http.Server` local en `127.0.0.1` con el provider `systemone` real | Loopback |
-| Live opt-in | `tests/integration/cloudflare.live.test.ts` | Llama a Cloudflare Workers AI de verdad | Internet + credenciales |
+| Live opt-in | `tests/integration/cloudflare.live.test.ts` y `tests/integration/openrouter.live.test.ts` | Llaman a Cloudflare Workers AI y a OpenRouter de verdad | Internet + credenciales |
 
 En orden de costo:
 
@@ -42,7 +42,7 @@ Todos los comandos se ejecutan desde la raíz del repo, con dependencias instala
 | `pnpm test:watch` | `vitest` en modo watch, misma cobertura que `pnpm test` | Nada |
 | `pnpm test:changed` | `vitest run --changed`: tests afectados por cambios desde el último commit | Nada |
 | `pnpm test:integration` | `vitest run tests/integration`: systemone local (corre) y live (skipped) | Loopback, sin credenciales |
-| `pnpm test:live` | `node scripts/run-live-tests.mjs`, que corre `vitest run tests/integration/cloudflare.live.test.ts` con `M1_LIVE=1` | Red y credenciales de Cloudflare |
+| `pnpm test:live` | `node scripts/run-live-tests.mjs`, que corre `vitest run tests/integration/*.live.test.ts` con `M1_LIVE=1` | Red y credenciales de Cloudflare / OpenRouter |
 | `pnpm lint` | `eslint .` (flat config, type-aware en `src/`) | Nada |
 | `pnpm typecheck` | `tsc --noEmit` sobre todo el proyecto | Nada |
 | `pnpm build` | `tsup` a `dist/` (ESM + sourcemaps) | Nada |
@@ -79,7 +79,7 @@ Dos límites concretos de este repo:
 
 Para esos casos, corré el archivo a mano o la suite completa antes de commitear.
 
-## 4. Live tests (Cloudflare)
+## 4. Live tests (Cloudflare y OpenRouter)
 
 El test live pega contra Workers AI con el modelo `@cf/cloudflare/clef-flash` y verifica que la respuesta traiga `noul` y `score` con el contrato esperado (`tests/integration/cloudflare.live.test.ts:16-51`). Hace una sola llamada, con dos preguntas y un `AbortSignal` de 30 s (`:40`).
 
@@ -103,17 +103,19 @@ Preparación:
    pnpm test:live
    ```
 
-   El script setea `M1_LIVE=1` y ejecuta sólo `tests/integration/cloudflare.live.test.ts` (`scripts/run-live-tests.mjs:5-7`).
+   El script setea `M1_LIVE=1` y ejecuta `tests/integration/*.live.test.ts` (`scripts/run-live-tests.mjs:5-7`). El live de OpenRouter se auto-skipea si no hay `OPENROUTER_KEY`; usa `M1_LIVE_OPENROUTER_MODEL` para cambiar el modelo (default `baseten/mammoth-1:free`).
 
 Para correrlo sin el script:
 
 ```bash
 # bash
-M1_LIVE=1 pnpm exec vitest run tests/integration/cloudflare.live.test.ts
+M1_LIVE=1 pnpm exec vitest run "tests/integration/*.live.test.ts"
 
 # PowerShell
-$env:M1_LIVE='1'; pnpm exec vitest run tests/integration/cloudflare.live.test.ts
+$env:M1_LIVE='1'; pnpm exec vitest run "tests/integration/*.live.test.ts"
 ```
+
+Para correr sólo uno, pasá el archivo (`tests/integration/cloudflare.live.test.ts` o `tests/integration/openrouter.live.test.ts`).
 
 ### Cuota y error 429
 
@@ -146,7 +148,7 @@ node scripts/precommit-typecheck.mjs
 - Extensiones de clave o certificado: `.pem`, `.key`, `.p12`, `.pfx`.
 - Archivos de más de 1 MiB.
 - Bloques `-----BEGIN ... PRIVATE KEY-----` con cuerpo base64 plausible (≥ 40 caracteres), para no marcar fixtures de tests.
-- Asignaciones de `CLOUDFLARE_API_TOKEN`, `TYPESAFE_API_KEY` o `LOCAL_API_KEY` con 20 caracteres o más, sólo en archivos de texto con extensiones `.ts`, `.mts`, `.cts`, `.js`, `.mjs`, `.cjs`, `.json`, `.md`, `.yaml`, `.yml`, `.sh`, `.txt` o `.example`.
+- Asignaciones de `CLOUDFLARE_API_TOKEN`, `TYPESAFE_API_KEY`, `LOCAL_API_KEY` u `OPENROUTER_KEY` con 20 caracteres o más, sólo en archivos de texto con extensiones `.ts`, `.mts`, `.cts`, `.js`, `.mjs`, `.cjs`, `.json`, `.md`, `.yaml`, `.yml`, `.sh`, `.txt` o `.example`.
 - Marcadores de conflicto sin resolver (`<<<<<<<`, `>>>>>>>`). `=======` solo no se marca porque es un heading Setext válido en Markdown.
 - `package-lock.json` y `yarn.lock` (el repo usa `pnpm`).
 - `.json` staged con sintaxis inválida.
@@ -274,7 +276,7 @@ Reglas prácticas:
 - Para tests de CLI, seguí el patrón de `tests/cli.test.ts:44-56`: `mkdtempSync` para el directorio temporal y limpieza en `afterEach`. Nunca uses el repo como cwd de escritura.
 - Para imágenes, usá el PNG 1x1 en base64 (`tests/cli.test.ts:21-25`, `tests/examples.test.ts:25-27`) en lugar de binarios versionados.
 - Para tests de integración, escuchá en `127.0.0.1` con puerto 0 y construí la `baseUrl` desde `server.address()` (`tests/integration/systemone.test.ts:110-112`).
-- Para tests live, además del guard, agregá el archivo a `scripts/run-live-tests.mjs`: el script tiene hardcodeado el path de Cloudflare, así que un live nuevo no se ejecuta con `pnpm test:live` hasta que lo incluyas.
+- Para tests live, además del guard, el script corre `tests/integration/*.live.test.ts`: si el archivo sigue esa convención se ejecuta con `pnpm test:live` sin tocar el script.
 - Si el test tarda más de 10 s, pasale el timeout como tercer argumento del `it` (`it('...', async () => { ... }, 45_000)`).
 - Descripciones en español, en la misma voz que el resto de la suite. Verificá códigos de salida explícitos en los e2e (0 `pass`, 1 `fail`, 2 `error`, 3 `needs_review`).
 
@@ -293,6 +295,6 @@ Comportamientos reales que difieren de lo que sugieren los nombres, los scripts 
 1. `test:changed` usa `vitest run --changed` (cambios desde el último commit). Dentro de lint-staged se usa `vitest related`, que recibe los archivos staged y es más preciso. Los tests que spawnean procesos (`cli`, e2e, integración, tooling) no los selecciona ninguno de los dos; por eso `pre-push` corre la suite completa.
 2. `tests/integration/cloudflare.live.test.ts:19-22` exige `apiKey` y `accountId` resueltos. `kind: cloudflare` toma `CLOUDFLARE_API_TOKEN` y `CLOUDFLARE_ACCOUNT_ID` del entorno por defecto (`src/config/credentials.ts:63-69`), así que con `.env` alcanza.
 3. La versión previa de `README.md` (línea 180 antes de este cambio) describía los tests como "unitarios en `tests/` (engine, expr, intake, normalize, providers, template)": omitía `config.test.ts`, `cli.test.ts`, `examples.test.ts`, `tests/integration/` y `tests/tooling/`, aunque `pnpm test` corre todo eso. Quedó corregido en el README actual.
-4. `scripts/run-live-tests.mjs:5` hardcodea `tests/integration/cloudflare.live.test.ts`: cualquier live nuevo queda fuera de `pnpm test:live` salvo que se edite el script.
+4. `scripts/run-live-tests.mjs:5` corre `tests/integration/*.live.test.ts`; un live nuevo con esa convención entra sin editar el script. OpenRouter puede bloquear la IP con un 403 de Cloudflare aunque la key sea válida: en ese caso el live falla con `E_PROVIDER` y no hay reintento útil.
 5. `tests/cli.test.ts` y los tests de integración no importan módulos de `src/` (spawnean la CLI), así que `vitest related` nunca los selecciona; y lint-staged sólo se aplica a `*.{ts,mts,cts}` (`package.json:27`), por lo que cambios en `scripts/*.mjs` o `.husky/*` no disparan tests en el hook.
-6. `scripts/precommit-guards.mjs:51` limita el escaneo de secretos a ciertas extensiones de texto y `:56` sólo reconoce `CLOUDFLARE_API_TOKEN`, `TYPESAFE_API_KEY` y `LOCAL_API_KEY`: un token de `SYSTEMONE_API_KEY` en un `.ts` no se detecta, y un token en una extensión fuera de la lista tampoco.
+6. `scripts/precommit-guards.mjs:51` limita el escaneo de secretos a ciertas extensiones de texto y `:56` reconoce `CLOUDFLARE_API_TOKEN`, `TYPESAFE_API_KEY`, `LOCAL_API_KEY` y `OPENROUTER_KEY`: un token de `SYSTEMONE_API_KEY` en un `.ts` no se detecta, y un token en una extensión fuera de la lista tampoco.

@@ -20,7 +20,8 @@
       "unwrap": "auto"
     },
     "mock": {
-      "kind": "mock"
+      "kind": "mock",
+      "fixturesDir": "./fixtures/mock"
     }
   }
 }

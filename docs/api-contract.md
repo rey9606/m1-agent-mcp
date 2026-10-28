@@ -48,7 +48,7 @@ Authorization: Bearer <api-key>
 | --- | --- | --- |
 | `noul` | opcional `{ true?: any, false?: any }` | Probabilidad de que la afirmación sea verdadera. |
 | `choice` | objeto `id → descripción` (2..255) | El modelo elige una opción y devuelve probabilidades. |
-| `score` | array ordenado de 2..10 niveles | El modelo devuelve un índice entero del nivel. |
+| `score` | array ordenado de 2..10 niveles | El modelo devuelve una posición ponderada 0..niveles-1; puede ser fraccionaria (ej. `0.67`). |
 
 ## Cloudflare (Clef)
 
@@ -143,7 +143,7 @@ Es el adaptador genérico: mismo body, misma respuesta, `baseUrl` configurable y
 
 - `noul`: número 0..1 (el motor lo clampea).
 - `choice`: `choice` debe ser una de las claves de `criteria`. `probabilities` es necesario si el criterio no define `mapping`: el motor lo consulta como fallback. `confidence` alimenta `needs_review`.
-- `score`: entero 0..(niveles-1); `probabilities` y `legend` son opcionales. `confidence` alimenta `needs_review`.
+- `score`: número entre 0 y (niveles-1); puede ser fraccionario (posición ponderada por probabilidades). `probabilities` y `legend` son opcionales. `confidence` alimenta `needs_review`.
 - `type` debe coincidir con el tipo declarado en la receta; si no, `E_PROVIDER`.
 
 ### Unwrap de `{ result }`

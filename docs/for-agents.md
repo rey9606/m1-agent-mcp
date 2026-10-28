@@ -163,7 +163,8 @@ Códigos: `E_USAGE`, `E_VALIDATION`, `E_INPUT`, `E_CONFIG`, `E_PROVIDER`, `E_TIM
 | `no hay entrada para evaluar` | No se pasó nada | `--input`, `--state`, `--state-file`, `--image` o `--stdin` |
 | `no se pudo determinar el slot para --state` (o `--state-file`) | Hay varios slots de texto | `--slot <name>` |
 | `referencia de plantilla desconocida` | `{{...}}` apunta a algo que no existe en el state | Revisar el nombre: `{{answers.<id>.normalized}}`, `{{criteria.<id>}}`, `{{slot}}` |
-| `referencia desconocida: "X"` en `when`/`derived`/`acceptance` | Id mal escrito, no declarado o de una etapa posterior | Corregir el id o mover la etapa; `recipe validate` lo detecta antes de correr |
+| `referencia desconocida: "X"` en `when`/`derived`/`acceptance` | Id mal escrito o no declarado | Corregir el id; `recipe validate` lo detecta antes de correr |
+| `referencia desconocida: "X"` en `when` de una etapa | El id existe, pero pertenece a una etapa posterior | Mover la etapa o quitar la dependencia; la validación semántica no mira el orden |
 | `la etapa "X" tiene un "when" inválido` | Expresión mal formada | Ver gramática en `docs/recipe-spec.md`; ids con guiones y resta con espacios |
 | `provider "X" no está configurado` | Alias inexistente | `m1 auth status` o revisar `providers` en `m1.config.json` |
 | `falta accountId de Cloudflare` / `falta API token` | Sin credenciales | Completar `.env` o `m1 auth set cf --token ... --account-id ...` |
@@ -174,7 +175,7 @@ Códigos: `E_USAGE`, `E_VALIDATION`, `E_INPUT`, `E_CONFIG`, `E_PROVIDER`, `E_TIM
 | `la imagen N (...) pesa ... el máximo por imagen es 4194304` | Imagen > 4 MiB | Comprimir o redimensionar |
 | `las imágenes suman ... el máximo total es ... 8 MiB` | Total decodificado > 8 MiB | Reducir cantidad o tamaño |
 | `formato de imagen no soportado` | No es PNG/JPEG/WebP real | Convertir el archivo |
-| `choice requiere entre 2 y 255 opciones` | `criteria` con 0 o 1 opción | Agregar al menos una alternativa |
+| `choice requiere entre 2 y 255 opciones` | `criteria` con menos de 2 opciones | Agregar al menos una alternativa |
 | `score requiere entre 2 y 10 niveles` | `criteria` con menos de 2 niveles | Agregar niveles ordenados |
 | `la etapa "X" pregunta un criterio inexistente` | Id mal escrito en `questions` | Corregir contra `criteria[].id` |
 | `faltó la respuesta para "X" en la etapa "Y"` | El proveedor omitió una pregunta | Reintentar; si persiste, dividir la etapa |

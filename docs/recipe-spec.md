@@ -254,8 +254,7 @@ Propiedades reales de `answers`, según el motor (`src/core/engine.ts:286-291`):
 ### Reglas de resolución
 
 - Si el string es exactamente `{{path}}`, se devuelve el valor tal cual (objetos, arrays y números conservan su tipo).
-- Si `{{path}}` está embebido, se interpola como string; objetos y arrays se serializan con `JSON.stringify`.
-- `{{null}}` interpola `"null"`.
+- Si `{{path}}` está embebido, se interpola como string; objetos y arrays se serializan con `JSON.stringify`. Un valor `null` embebido se interpola como `"null"` (por ejemplo, un slot `json` ausente en `{{logs}}`).
 - Los segmentos se separan por puntos; `[...]` permite ids con puntos o cualquier carácter. Ejemplo: `{{answers.[UX-1].choice}}`.
 - Si un path no existe, `E_EXPR` con las claves disponibles.
 - Los objetos y arrays se recorren en profundidad; no se muta la entrada.

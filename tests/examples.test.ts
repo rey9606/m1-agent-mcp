@@ -7,7 +7,6 @@ import { describe, expect, it } from 'vitest';
 import { runRecipe, type EngineDeps, type EngineEvent } from '../src/core/engine';
 import { collectRefs } from '../src/core/expr';
 import { validateRecipe, type RecipeValidation } from '../src/core/validate';
-import type { LoadedImage } from '../src/intake/images';
 import { createMockProvider } from '../src/providers/mock';
 import type {
   DecisionProvider,
@@ -242,7 +241,6 @@ describe('dry-run de las recetas', () => {
     const { recipe } = loadRecipe('copy-checker');
     const captured = captureRequests();
     const copy = 'Este es el texto de copy bajo evaluación.';
-    const loaded: LoadedImage[] = [];
 
     const result = await runRecipe({
       recipe,
@@ -254,7 +252,6 @@ describe('dry-run de las recetas', () => {
       options: { dryRun: true },
     });
 
-    expect(loaded).toHaveLength(0);
     expect(captured.requests).toHaveLength(2);
     expect(captured.requests[0]!.state).toMatchObject({ copy, brief: '' });
     expect(Object.keys(captured.requests[0]!.questions)).toEqual([

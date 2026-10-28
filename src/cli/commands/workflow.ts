@@ -18,6 +18,7 @@ import {
   userWorkflowsDir,
 } from '../../workflows/store';
 import { workflowGuidePayload } from '../../workflows/guide';
+import { explainWorkflow, renderExplainMermaid, renderExplainText } from '../../workflows/explain';
 import { fail } from '../output';
 
 export interface WorkflowListFlags {
@@ -26,6 +27,11 @@ export interface WorkflowListFlags {
 
 export interface WorkflowShowFlags {
   json?: boolean;
+}
+
+export interface WorkflowExplainFlags {
+  json?: boolean;
+  format?: string;
 }
 
 export interface WorkflowNewFlags {
@@ -135,6 +141,46 @@ export function workflowShowCommand(name: string, flags: WorkflowShowFlags): nev
       if (entry.role) process.stdout.write(`  rol: ${entry.role}\n`);
       process.stdout.write('\n');
       process.stdout.write(`${JSON.stringify(workflow, null, 2)}\n`);
+    }
+    process.exit(0);
+  } catch (error) {
+    fail(error, Boolean(flags.json));
+  }
+}
+
+export function workflowExplainCommand(name: string, flags: WorkflowExplainFlags): never {
+  try {
+    const format = flags.format ?? 'text';
+    if (format !== 'text' && format !== 'mermaid') {
+      throw new M1Error('E_USAGE', `formato desconocido: ${format}`, {
+        hint: 'usá --format text (default) o --format mermaid',
+      });
+    }
+
+    const entry = findWorkflow(name);
+    if (entry.error) throw new M1Error('E_VALIDATION', entry.error);
+    const { recipe, warnings } = validateRecipe(readWorkflowFile(entry.path), {
+      defaultId: entry.name,
+      filePath: entry.path,
+    });
+    const explained = explainWorkflow({
+      recipe,
+      name: entry.name,
+      builtin: entry.builtin,
+      path: entry.path,
+      description: entry.description,
+    });
+
+    if (flags.json) {
+      const payload: Record<string, unknown> = { ok: true, ...explained, warnings };
+      if (format === 'mermaid') payload.mermaid = renderExplainMermaid(explained);
+      process.stdout.write(JSON.stringify(payload) + '\n');
+    } else if (format === 'mermaid') {
+      process.stdout.write(renderExplainMermaid(explained));
+      for (const warning of warnings) process.stderr.write(`  ! ${warning}\n`);
+    } else {
+      process.stdout.write(renderExplainText(explained));
+      for (const warning of warnings) process.stderr.write(`  ! ${warning}\n`);
     }
     process.exit(0);
   } catch (error) {

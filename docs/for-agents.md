@@ -103,6 +103,36 @@ Reglas de diseño que evitan problemas:
 
 ## Interpretar la salida
 
+### Elegir el modo
+
+| flag | tamaño | uso |
+| --- | --- | --- |
+| `--agent` | ~200 tokens | **default para agentes**: decidir y actuar |
+| `--json` | completo | auditar, depurar, ver probabilidades y trace |
+| `--compact` | una línea | logs de CI |
+| (sin flag) | texto | mostrar al usuario |
+
+### Salida `--agent`
+
+```json
+{
+  "ok": true,
+  "runId": "run_0fe9f606a4d0",
+  "workflow": "copy-checker",
+  "verdict": "fail",
+  "score": 60,
+  "issues": [
+    { "criterion": "CP-4", "severity": "major", "message": "Corrección: 0.52 < 0.8", "remediation": "Pasá corrector." }
+  ],
+  "gates": [{ "id": "A3", "expr": "quality >= 0.7", "severity": "major", "detail": "quality = 0.6" }],
+  "derived": { "quality": 0.6 },
+  "passed": ["CP-3", "CP-5"],
+  "meta": { "provider": "liquid", "model": "d1-omni-600M", "calls": 2, "ms": 15970 }
+}
+```
+
+`gates` son los `acceptance` que fallaron: explican un `fail` global cuando ningún criterio puntual falló (por ejemplo `quality < 0.7`). `detail` trae el valor actual del símbolo para que no tengas que recalcularlo.
+
 ### Salida JSON (`--json`)
 
 ```json
@@ -274,6 +304,7 @@ m1 run --help
 # Workflows
 m1 workflow list
 m1 workflow show copy-checker
+m1 workflow explain copy-checker          # qué pregunta, con qué umbral y por qué pasa o falla
 m1 workflow new mi-copy --from copy-checker --description "Copy para landing"
 m1 workflow validate mi-copy
 m1 workflow export mi-copy --out ./mi-copy.json
@@ -338,7 +369,10 @@ m1 run copy-checker --slot copy --state "texto" --provider cf --model @cf/cloudf
 # Timeout por etapa
 m1 run copy-checker --slot copy --state "texto" --timeout 90000 --json
 
-# Salida compacta para consumo barato de otro LLM
+# Salida mínima para agentes (recomendada): ~200 tokens, sólo lo accionable
+m1 run copy-checker --slot copy --state "texto" --agent
+
+# Salida compacta de una línea (logs)
 m1 run copy-checker --slot copy --state "texto" --compact
 
 # Config alternativa

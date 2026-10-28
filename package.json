@@ -12,6 +12,7 @@
     "dist",
     "examples",
     "README.md",
+    "SKILL.md",
     "LICENSE"
   ],
   "engines": {

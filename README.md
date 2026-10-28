@@ -87,13 +87,75 @@ Inspeccionar los requests sin llamar al proveedor:
 m1 run copy-checker --slot copy --state "texto" --print-request
 ```
 
+## Entender un workflow
+
+`m1 workflow show <name>` devuelve el JSON crudo. `m1 workflow explain <name>` lo traduce a lo que hace el motor: qué recibe, qué pregunta en cada etapa, cuándo se saltea una etapa, con qué umbral aprueba cada criterio y qué hace falta para pasar.
+
+```bash
+m1 workflow explain ux-checker                    # texto: etapas, criterios, cálculo y veredicto
+m1 workflow explain ux-checker --format mermaid   # diagrama para pegar en un README o un issue
+m1 workflow explain ux-checker --json             # la misma información, estructurada
+```
+
+Un extracto de la salida del built-in de UX:
+
+```text
+  ux-checker · built-in
+  Revisa pantallas renderizadas: jerarquía, contraste, consistencia y claridad de la acción principal.
+
+  QUÉ RECIBE
+    brief    text     opcional   Contexto: producto, audiencia, objetivo de la pantalla.
+    screens  image[]  requerido  Screenshots renderizados (mobile y desktop). · máx. 4
+
+  ETAPAS (2)
+    1  base         4 preguntas · siempre
+       UX-1  Jerarquía visual (score)
+       UX-2  Contraste AA (noul)
+       UX-3  Consistencia del sistema (choice)
+       UX-4  Claridad de la acción (noul)
+    2  diagnostico  1 pregunta · sólo si: UX-1 < 0.5 || UX-2 < 0.7 · state propio
+       UX-5  Naturaleza del defecto (choice)
+
+  QUÉ HACE FALTA PARA PASAR
+    A1  UX-2 >= 0.7      blocker  · si falla → fail
+    A2  quality >= 0.72  major    · si falla → fail
+```
+
+Y el diagrama que genera `--format mermaid` (la etapa `diagnostico` sólo corre si la jerarquía o el contraste fallan):
+
+```mermaid
+flowchart TD
+  IN["entrada<br/>brief: text<br/>screens: image[] (requerido)"]
+  S1["base<br/>UX-1 · UX-2 · UX-3 · UX-4"]
+  S2["diagnostico<br/>UX-5"]
+  AGG["agregación<br/>score 0..100<br/>quality"]
+  V(["pass · fail · needs_review"])
+  IN -->|"siempre"| S1
+  S1 -->|"UX-1 &lt; 0.5 || UX-2 &lt; 0.7"| S2
+  S1 -->|"si no"| AGG
+  S2 --> AGG
+  AGG --> ACC{"acceptance<br/>A1 · A2"}
+  ACC -->|"cumple"| V
+  ACC -->|"no cumple"| V
+  classDef input fill:#eef2ff,stroke:#6366f1,color:#1e1b4b
+  classDef stage fill:#f5f3ff,stroke:#8b5cf6,color:#2e1065
+  classDef decision fill:#fef3c7,stroke:#d97706,color:#78350f
+  classDef verdict fill:#dcfce7,stroke:#16a34a,color:#14532d
+  class IN input
+  class S1,S2 stage
+  class AGG stage
+  class ACC decision
+  class V verdict
+```
+
 ## Comandos
 
 | Comando | Para qué | Flags principales |
 | --- | --- | --- |
-| `m1 run <workflow>` | Ejecuta un workflow (por nombre) sobre un trabajo | `-i, --input <file>`, `--state <text>`, `--state-file <file>`, `--image <path>` (repetible), `--slot <name>`, `--image-slot <name>`, `--stdin`, `--provider <alias>`, `--model <id>`, `--timeout <ms>`, `--local-start <mode>`, `--download`, `--dry-run`, `--print-request`, `--trace`, `--json`, `--compact`, `-c, --config <file>` |
+| `m1 run <workflow>` | Ejecuta un workflow (por nombre) sobre un trabajo | `-i, --input <file>`, `--state <text>`, `--state-file <file>`, `--image <path>` (repetible), `--slot <name>`, `--image-slot <name>`, `--stdin`, `--provider <alias>`, `--model <id>`, `--timeout <ms>`, `--local-start <mode>`, `--download`, `--dry-run`, `--print-request`, `--trace`, `--json`, `--agent`, `--compact`, `-c, --config <file>` |
 | `m1 workflow list` (alias `ls`) | Lista nombre, tipo y descripción de los workflows | `--json` |
 | `m1 workflow show <name>` | Muestra el JSON completo y su metadata | `--json` |
+| `m1 workflow explain <name>` | Explica el workflow en claro: etapas, criterios, umbrales y veredicto | `--format text\|mermaid`, `--json` |
 | `m1 workflow new <name>` (alias `create`) | Crea un workflow de usuario | `--from <name>`, `--role <role>`, `--description <text>`, `--json` |
 | `m1 workflow import <file>` | Importa un workflow desde JSON | `--name <name>`, `--json` |
 | `m1 workflow export <name>` | Exporta un workflow | `--out <file>` |
@@ -129,7 +191,7 @@ Notas de comportamiento:
 
 - `--print-request` implica `--dry-run` y sale con código 0.
 - `--input` y `--stdin` se combinan; `--state`, `--state-file` y `--image` se aplican después y pisan o agregan sobre lo cargado.
-- `--json` tiene prioridad sobre `--compact`. Con `--json`, `--trace` no escribe en stderr.
+- `--json` tiene prioridad sobre `--agent` y `--compact`. Con `--json`, `--trace` no escribe en stderr.
 - El timeout es **por etapa** (cada llamada al proveedor), no del run completo.
 
 ### Exit codes
@@ -145,7 +207,16 @@ Notas de comportamiento:
 
 ## Para agentes de IA
 
-La CLI está pensada para que la use un agente sin adivinar:
+La CLI está pensada para que la use un agente sin adivinar. Hay un skill listo para cargar: [`SKILL.md`](https://github.com/rey9606/m1-agent-mcp/blob/main/SKILL.md).
+
+Para consumo barato, `--agent` devuelve sólo lo accionable (veredicto, fallas, remediaciones y gates) en vez del JSON completo:
+
+```bash
+m1 run copy-checker --slot copy --state "texto" --agent
+# {"ok":true,"workflow":"copy-checker","verdict":"fail","score":60,
+#  "issues":[{"criterion":"CP-4","severity":"major","message":"Corrección: 0.52 < 0.8",
+#             "remediation":"Pasá corrector..."}], ...}
+```
 
 ```bash
 m1 guide            # tutorial completo en texto
@@ -192,7 +263,7 @@ planificar etapas (orden declarado)
 derived (en orden) -> acceptance -> veredicto + score + issues
    |
    v
-salida humana | compacta | JSON
+salida humana | compacta | JSON | JSON mínimo para agentes
 ```
 
 Puntos clave:

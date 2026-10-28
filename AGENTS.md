@@ -43,16 +43,17 @@ m1 guide --json          # mismo contenido, estructurado
 m1 --help                # comandos y contrato
 m1 <comando> --help      # opciones y argumentos exactos
 m1 workflow schema       # JSON Schema de workflows
-m1 --version             # 0.1.0
+m1 --version             # 0.1.6
 ```
 
 Manual extendido (construir entradas, escribir workflows, errores comunes):
-[docs/for-agents.md](docs/for-agents.md).
+[docs/for-agents.md](docs/for-agents.md). Skill cargable para agentes:
+[SKILL.md](SKILL.md).
 
 `m1 guide --json` devuelve:
 
 ```json
-{ "ok": true, "version": "0.1.0", "sections": [{ "id": "...", "title": "...", "body": "...", "commands": ["..."] }] }
+{ "ok": true, "version": "0.1.6", "sections": [{ "id": "...", "title": "...", "body": "...", "commands": ["..."] }] }
 ```
 
 ## Instalación
@@ -68,7 +69,7 @@ npm install -g m1-agent                     # o global
 ```bash
 m1 doctor --json
 m1 workflow list
-m1 run copy-checker --slot copy --state "texto a evaluar" --json
+m1 run copy-checker --slot copy --state "texto a evaluar" --agent
 # exit 0 → pass | 1 → fail (leé issues[].remediation)
 #          2 → error (leé error.code/hint)
 #          3 → needs_review
@@ -81,6 +82,7 @@ m1 run copy-checker --slot copy --state "texto a evaluar" --json
 | `m1 run <workflow>`                       | ejecuta el workflow sobre un trabajo                  |
 | `m1 workflow list\|show\|new\|import\|export\|edit\|delete` | administra workflows (los built-in son de sólo lectura) |
 | `m1 workflow validate <nombre>`           | valida un workflow sin ejecutarlo                     |
+| `m1 workflow explain <nombre>`            | explica qué hace: etapas, criterios, umbrales y veredicto (`--format mermaid` para diagramar) |
 | `m1 workflow schema`                      | imprime el JSON Schema                                |
 | `m1 workflow guide`                       | guía de autoría con esqueleto                         |
 | `m1 provider list\|presets\|show\|add\|edit\|remove\|set-default\|test` | administra providers (siempre global) |
@@ -129,6 +131,31 @@ Todos aceptan `--json`; `run`, `models`, `model`, `local` y `doctor` aceptan
 | `--model <id>`             | override del modelo                                  |
 | `--timeout <ms>`           | timeout por etapa                                    |
 | `--download`               | permite bajar el GGUF local sin preguntar            |
+| `--agent`                  | JSON mínimo para agentes (recomendado: ahorra ~90% de tokens) |
+| `--json`                   | JSON completo (debug/auditoría)                      |
+
+## Salida de `run --agent` (recomendada para agentes)
+
+```json
+{
+  "ok": true,
+  "runId": "run_ab12cd34ef56",
+  "workflow": "copy-checker",
+  "verdict": "fail",
+  "score": 60,
+  "issues": [
+    { "criterion": "CP-4", "severity": "major", "message": "Corrección: 0.52 < 0.8", "remediation": "Pasá corrector." }
+  ],
+  "gates": [{ "id": "A3", "expr": "quality >= 0.7", "severity": "major", "detail": "quality = 0.6" }],
+  "derived": { "quality": 0.6 },
+  "passed": ["CP-3", "CP-5"],
+  "meta": { "provider": "liquid", "model": "d1-omni-600M", "calls": 2, "ms": 15970 }
+}
+```
+
+- No incluye `probabilities`, `legend`, `confidence`, `weight` ni `trace`.
+- `gates[]` explica los `acceptance` que fallaron aunque ningún criterio puntual falle.
+- `issues[].remediation` es la acción concreta a ejecutar; no la inventes.
 
 ## Salida de `run --json`
 

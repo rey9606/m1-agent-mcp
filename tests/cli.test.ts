@@ -182,6 +182,29 @@ describe('m1 run', () => {
     expect(lines[0]).toContain('[PASS]');
   });
 
+  it('--agent devuelve JSON mínimo, sin criterios ni probabilidades', () => {
+    const dir = makeTmp();
+    const config = writeMockConfig(dir, { fixtures: COPY_FIXTURES });
+
+    const result = cli(['run', COPY_WORKFLOW, '--state', 'texto', '--agent', '-c', config]);
+
+    expect(result.status).toBe(0);
+    const out = JSON.parse(result.stdout) as {
+      ok: boolean;
+      verdict: string;
+      workflow: string;
+      issues: unknown[];
+      criteria?: unknown;
+      probabilities?: unknown;
+    };
+    expect(out.ok).toBe(true);
+    expect(out.verdict).toBe('pass');
+    expect(out.workflow).toBe('copy-checker');
+    expect(out.criteria).toBeUndefined();
+    expect(out.probabilities).toBeUndefined();
+    expect(result.stdout.trimEnd()).not.toContain('\n');
+  });
+
   it('modo humano (sin --json) imprime score:', () => {
     const dir = makeTmp();
     const config = writeMockConfig(dir, { fixtures: COPY_FIXTURES });
@@ -429,6 +452,46 @@ describe('m1 workflow / doctor', () => {
     };
     expect(schema.definitions?.Workflow).toBeDefined();
     expect(schema.definitions?.Workflow?.type).toBe('object');
+  });
+
+  it('workflow explain explica el built-in por nombre', () => {
+    const result = cli(['workflow', 'explain', 'ux-checker']);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('ETAPAS (2)');
+    expect(result.stdout).toContain('sólo si: UX-1 < 0.5 || UX-2 < 0.7');
+    expect(result.stdout).toContain('CRITERIOS (5)');
+  });
+
+  it('workflow explain --format mermaid emite un flowchart', () => {
+    const result = cli(['workflow', 'explain', 'ux-checker', '--format', 'mermaid']);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout.startsWith('flowchart TD')).toBe(true);
+    expect(result.stdout).toContain('V(["pass · fail · needs_review"])');
+  });
+
+  it('workflow explain --json devuelve la estructura explicada', () => {
+    const result = cli(['workflow', 'explain', 'ux-checker', '--json']);
+
+    expect(result.status).toBe(0);
+    const out = JSON.parse(result.stdout) as {
+      ok: boolean;
+      stages: Array<{ id: string }>;
+      criteria: Array<{ id: string }>;
+      example: { command: string };
+    };
+    expect(out.ok).toBe(true);
+    expect(out.stages.map((stage) => stage.id)).toEqual(['base', 'diagnostico']);
+    expect(out.criteria).toHaveLength(5);
+    expect(out.example.command).toContain('m1 run ux-checker');
+  });
+
+  it('workflow explain rechaza un --format desconocido con E_USAGE', () => {
+    const result = cli(['workflow', 'explain', 'ux-checker', '--format', 'dot', '--json']);
+
+    expect(result.status).toBe(2);
+    expect(errorOf(result).code).toBe('E_USAGE');
   });
 
   it('doctor --json con config mock termina en 0 e incluye el alias', () => {

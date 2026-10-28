@@ -14,6 +14,7 @@ import { EXIT, fail } from '../output';
 import { renderHuman } from '../../render/human';
 import { renderJson } from '../../render/json';
 import { renderCompact } from '../../render/compact';
+import { renderAgent } from '../../render/agent';
 import type { DecisionProvider } from '../../providers/types';
 
 export interface RunFlags {
@@ -26,6 +27,7 @@ export interface RunFlags {
   stdin?: boolean;
   json?: boolean;
   compact?: boolean;
+  agent?: boolean;
   trace?: boolean;
   dryRun?: boolean;
   printRequest?: boolean;
@@ -183,6 +185,8 @@ export async function runCommand(workflowRef: string, flags: RunFlags): Promise<
 
     if (json) {
       process.stdout.write(renderJson(result) + '\n');
+    } else if (flags.agent) {
+      process.stdout.write(renderAgent(result) + '\n');
     } else if (flags.compact) {
       process.stdout.write(renderCompact(result) + '\n');
     } else {

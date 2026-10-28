@@ -4,6 +4,7 @@ import { runCommand } from './commands/run';
 import {
   workflowDeleteCommand,
   workflowEditCommand,
+  workflowExplainCommand,
   workflowExportCommand,
   workflowGuideCommand,
   workflowImportCommand,
@@ -41,12 +42,14 @@ Ejemplos:
   $ m1 doctor                                  verifica entorno, config y providers
   $ m1 workflow list                           workflows disponibles (nombre + descripción)
   $ m1 run copy-checker --state "texto a evaluar"
-  $ m1 run ux-checker --image pantalla.png --timeout 300000 --json
+  $ m1 run ux-checker --image pantalla.png --timeout 300000 --agent
+  $ m1 workflow explain ux-checker             qué hace, con qué umbrales y veredicto
   $ m1 provider list                           providers configurados
   $ m1 local start --provider liquid           levanta el modelo local si no responde
 
 Contrato para agentes:
   · Todos los comandos aceptan --json (un único objeto JSON en stdout).
+  · run acepta --agent: JSON mínimo (veredicto, fallas, remediaciones) para ahorrar tokens.
   · Los errores van a stderr como { ok:false, error:{ code, message, hint, details }, docs }.
   · Exit codes: 0 pass · 1 fail · 2 error · 3 needs_review.
   · Ayuda puntual: m1 <comando> --help · Guía en JSON: m1 guide --json`;
@@ -104,6 +107,7 @@ program
   .option('--print-request', 'imprime el/los request(s) que se enviarían (implica --dry-run)')
   .option('--trace', 'muestra las etapas por stderr')
   .option('--json', 'salida JSON (contrato estable)')
+  .option('--agent', 'JSON mínimo para agentes: veredicto, fallas y remediaciones')
   .option('--compact', 'salida de una línea')
   .option('-c, --config <file>', 'ruta a m1.config.json')
   .action(async (workflow: string, flags) => {
@@ -191,7 +195,7 @@ local
 
 const workflow = program
   .command('workflow')
-  .description('workflows: listar, crear, importar/exportar y validar');
+  .description('workflows: listar, explicar, crear, importar/exportar y validar');
 
 workflow
   .command('list')
@@ -209,6 +213,16 @@ workflow
   .option('--json', 'salida JSON')
   .action((name: string, flags) => {
     workflowShowCommand(name, flags);
+  });
+
+workflow
+  .command('explain')
+  .description('explica un workflow en claro: etapas, criterios, umbrales y veredicto')
+  .argument('<name>', 'nombre del workflow')
+  .option('--format <format>', 'text (default) o mermaid para diagramar', 'text')
+  .option('--json', 'salida JSON')
+  .action((name: string, flags) => {
+    workflowExplainCommand(name, flags);
   });
 
 workflow

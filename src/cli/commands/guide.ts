@@ -41,10 +41,19 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     ],
   },
   {
+    id: 'entender',
+    title: 'Entender un workflow',
+    body:
+      'm1 workflow show <nombre> imprime el JSON crudo; m1 workflow explain <nombre> lo traduce a lo que hace el motor: ' +
+      'qué recibe, qué pregunta cada etapa, cuándo se saltea una etapa, con qué umbral aprueba cada criterio y qué hace falta ' +
+      'para pasar. Con --format mermaid devuelve el flujo como diagrama.',
+    commands: ['m1 workflow explain ux-checker', 'm1 workflow explain ux-checker --format mermaid'],
+  },
+  {
     id: 'comandos',
     title: 'Comandos',
     body:
-      'run ejecuta un workflow (por nombre) · workflow list|show|new|import|export|edit|delete|validate|schema|guide ' +
+      'run ejecuta un workflow (por nombre) · workflow list|show|explain|new|import|export|edit|delete|validate|schema|guide ' +
       'administra workflows · provider list|presets|add|edit|remove|set-default|test configura providers · ' +
       'models lista el catálogo del provider · model show|use|reset gestiona el modelo · ' +
       'local start|status|stop administra el servidor local · auth set|status|remove gestiona credenciales · ' +
@@ -63,8 +72,14 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     body:
       'Todos los comandos aceptan --json y escriben un único objeto JSON en stdout ' +
       '(los errores van a stderr con {ok:false,error:{code,message,hint,details}}). ' +
-      'run devuelve {ok, verdict, score, criteria[], issues[], derivados, usage, trace}.',
-    commands: ['m1 run copy-checker --state "texto" --json', 'm1 doctor --json'],
+      'run devuelve {ok, verdict, score, criteria[], issues[], derivados, usage, trace}. ' +
+      'Para agentes usá --agent: mismo veredicto y remediaciones, sin probabilidades ni trace (~90% menos tokens). ' +
+      '--compact es una línea para logs; sin flags, texto para humanos.',
+    commands: [
+      'm1 run copy-checker --state "texto" --agent',
+      'm1 run copy-checker --state "texto" --json',
+      'm1 doctor --json',
+    ],
   },
   {
     id: 'exit-codes',

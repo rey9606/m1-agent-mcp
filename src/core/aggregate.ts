@@ -33,8 +33,10 @@ function passAtOf(result: CriterionResult): number {
 }
 
 function formatRaw(result: CriterionResult): string {
-  if (result.type === 'score') return `score ${result.raw}`;
-  return String(result.raw);
+  if (result.type === 'score') {
+    return `score ${typeof result.raw === 'number' ? Number(result.raw.toFixed(2)) : result.raw}`;
+  }
+  return typeof result.raw === 'number' ? String(Number(result.raw.toFixed(2))) : String(result.raw);
 }
 
 /** Issues de los criterios que no pasaron, ordenados por severidad y luego por id. */

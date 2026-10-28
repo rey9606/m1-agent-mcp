@@ -269,6 +269,16 @@ describe('resolveSecrets', () => {
     });
   });
 
+  it('CLOUDFLARE_API_TOKEN por defecto para kind cloudflare', () => {
+    vi.stubEnv('CLOUDFLARE_API_TOKEN', 'env-token');
+
+    expect(credentials.resolveSecrets('cf', cfg({}))).toEqual({
+      apiKey: 'env-token',
+      accountId: undefined,
+    });
+    expect(credentials.resolveSecrets('ts', cfg({ kind: 'typesafe' })).apiKey).toBeUndefined();
+  });
+
   it('CLOUDFLARE_ACCOUNT_ID sólo aplica a kind cloudflare', () => {
     vi.stubEnv('CLOUDFLARE_ACCOUNT_ID', 'env-acc');
 

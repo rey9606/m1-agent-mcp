@@ -1,7 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { basename, isAbsolute, resolve } from 'node:path';
 import { z } from 'zod';
-import zodToJsonSchema from 'zod-to-json-schema';
 import { M1Error } from '../../core/errors';
 import { validateRecipe } from '../../core/validate';
 import { recipeSchema } from '../../schema/recipe';
@@ -44,7 +43,14 @@ export async function recipeValidateCommand(path: string, flags: { json?: boolea
 }
 
 export function recipeSchemaCommand(_flags: { json?: boolean }): never {
-  const schema = zodToJsonSchema(recipeSchema, { name: 'Recipe', target: 'jsonSchema7' });
+  // Zod 4 genera JSON Schema nativo; se envuelve en `definitions.Recipe` para
+  // conservar el contrato estable que ya consumen los tests y usuarios.
+  const definition = z.toJSONSchema(recipeSchema, { target: 'draft-7' });
+  const schema = {
+    $schema: 'http://json-schema.org/draft-07/schema#',
+    $ref: '#/definitions/Recipe',
+    definitions: { Recipe: definition },
+  };
   process.stdout.write(JSON.stringify(schema, null, 2) + '\n');
   process.exit(0);
 }

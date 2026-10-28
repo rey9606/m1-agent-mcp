@@ -97,7 +97,7 @@ export function validateRecipe(
   });
 
   // --- etapas ------------------------------------------------------------
-  const maxStages = recipe.limits.maxStages ?? 32;
+  const maxStages = recipe.limits.maxStages ?? 64;
   if (recipe.stages.length > maxStages) {
     errors.push({
       path: 'stages',

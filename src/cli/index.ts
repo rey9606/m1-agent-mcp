@@ -25,7 +25,7 @@ program
   .option('--stdin', 'lee el trabajo desde stdin (JSON o texto)')
   .option('--provider <alias>', 'provider a usar (override de la config)')
   .option('--model <id>', 'modelo a usar (override)')
-  .option('--timeout <ms>', 'timeout total por etapa')
+  .option('--timeout <ms>', 'timeout por etapa (no del run completo)')
   .option('--dry-run', 'arma el request y no llama al proveedor')
   .option('--print-request', 'imprime el/los request(s) que se enviarían (implica --dry-run)')
   .option('--trace', 'muestra las etapas por stderr')

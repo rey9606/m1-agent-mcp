@@ -68,7 +68,7 @@ export async function runCommand(recipePath: string, flags: RunFlags): Promise<n
     }
 
     const config = loadConfig({ explicit: flags.config });
-    const { alias, config: providerCfg } = resolveProvider(config, flags.provider, {
+    const { alias, config: providerCfg } = resolveProvider(config, flags.provider ?? recipe.provider, {
       model: flags.model,
       timeoutMs: flags.timeout ? Number(flags.timeout) : undefined,
     });

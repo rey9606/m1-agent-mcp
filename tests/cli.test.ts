@@ -129,6 +129,32 @@ describe('m1 run', () => {
     expect(result.stderr).toBe('');
   });
 
+  it('usa recipe.provider cuando no se pasa --provider', () => {
+    const dir = makeTmp();
+    const config = join(dir, 'm1.config.json');
+    writeFileSync(
+      config,
+      JSON.stringify({
+        default: 'mock',
+        providers: { mock: { kind: 'mock' }, alt: { kind: 'mock' } },
+      }),
+    );
+    const recipe = writeJson(dir, 'alt-recipe.json', {
+      id: 'alt',
+      role: 'tester',
+      provider: 'alt',
+      input: { slots: { state: { type: 'text', required: true } } },
+      criteria: [{ id: 'a', type: 'noul', instructions: '¿A?' }],
+      stages: [{ id: 's1', questions: ['a'] }],
+    });
+
+    const result = cli(['run', recipe, '--state', 'texto', '--json', '-c', config]);
+
+    expect(result.status).toBe(0);
+    const out = JSON.parse(result.stdout) as { meta: { provider: string } };
+    expect(out.meta.provider).toBe('alt');
+  });
+
   it('--compact imprime una sola línea con [PASS]', () => {
     const dir = makeTmp();
     const config = writeMockConfig(dir, { fixtures: COPY_FIXTURES });

@@ -81,5 +81,7 @@ export interface DecideOptions {
 export interface DecisionProvider {
   readonly name: string;
   readonly kind: ProviderKind;
+  /** Capacidades conocidas; `undefined` = desconocido (no bloquear). */
+  readonly capabilities?: { images: boolean };
   evaluate(request: DecisionRequest, options?: DecideOptions): Promise<DecisionResponse>;
 }

@@ -1,4 +1,5 @@
 import { M1Error } from '../core/errors.js';
+import { CLEF_MODELS, capabilitiesFor, normalizeCloudflareModel } from './models.js';
 import type {
   DecideOptions,
   DecisionProvider,
@@ -11,15 +12,14 @@ export const CLOUDFLARE_DEFAULT_MODEL = '@cf/cloudflare/clef-flash';
 export const CLEF_API_BASE = 'https://api.cloudflare.com/client/v4/accounts';
 export const CLOUDFLARE_DEFAULT_TIMEOUT_MS = 60_000;
 
-export type ClefModel = 'clef' | 'clef-flash';
+export type ClefModel = (typeof CLEF_MODELS)[number];
 
 /** Deriva el `model` del body desde el nombre público del modelo (con o sin prefijo `@cf/...`). */
 export function deriveClefModel(model: string): ClefModel {
-  const normalized = model.trim().toLowerCase();
-  if (normalized === 'clef' || normalized === '@cf/cloudflare/clef') return 'clef';
-  if (normalized === 'clef-flash' || normalized === '@cf/cloudflare/clef-flash') return 'clef-flash';
+  const normalized = normalizeCloudflareModel(model);
+  if ((CLEF_MODELS as readonly string[]).includes(normalized)) return normalized as ClefModel;
   throw new M1Error('E_CONFIG', `modelo de Clef inválido: ${model}`, {
-    hint: "usá '@cf/cloudflare/clef-flash' o '@cf/cloudflare/clef'",
+    hint: `usá uno de: ${CLEF_MODELS.map((id) => `@cf/cloudflare/${id}`).join(', ')}`,
   });
 }
 
@@ -158,9 +158,11 @@ function hintForStatus(status: number): string | undefined {
 }
 
 export function createCloudflareProvider(name: string, cfg: ProviderConfig): DecisionProvider {
+  const configuredModel = cfg.model ?? CLOUDFLARE_DEFAULT_MODEL;
   return {
     name,
     kind: 'cloudflare',
+    capabilities: { images: capabilitiesFor('cloudflare', configuredModel)?.images ?? true },
     async evaluate(request: DecisionRequest, options?: DecideOptions): Promise<DecisionResponse> {
       const accountId = cfg.accountId || process.env.CLOUDFLARE_ACCOUNT_ID;
       if (!accountId) {

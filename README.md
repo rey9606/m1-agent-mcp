@@ -176,13 +176,14 @@ Un endpoint "systemone compatible" es el atajo para no escribir código: mismo b
 ## Testing
 
 ```bash
-pnpm test              # suite completa (unitarios, e2e de CLI, integración local); live skipped
+pnpm test              # suite completa (unitarios, e2e de CLI, tooling, integración local); live skipped
 pnpm test:integration  # sólo tests/integration (systemone local; live skipped)
 pnpm test:live         # live contra Cloudflare (opt-in, requiere credenciales)
+pnpm lint              # ESLint flat config, type-aware en src/
 pnpm typecheck
 ```
 
-El pre-commit corre guardas de secretos, validación de recetas de `examples/`, tests relacionados con el diff y typecheck. Detalle de cada capa, credenciales del live y convención de commits en [docs/testing.md](docs/testing.md).
+El pre-commit corre guardas de seguridad (leyendo el índice git), `secretlint`, ESLint con autofix, tests relacionados con el diff y typecheck condicional (sólo si hay `.ts` staged). El `commit-msg` valida Conventional Commits y el `pre-push` corre `pnpm audit --audit-level=high` si cambió el lockfile más la suite completa. Detalle de cada capa, credenciales del live y convención de commits en [docs/testing.md](docs/testing.md).
 
 ## Estado del proyecto
 

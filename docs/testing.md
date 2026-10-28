@@ -40,9 +40,10 @@ Todos los comandos se ejecutan desde la raíz del repo, con dependencias instala
 | --- | --- | --- |
 | `pnpm test` | `vitest run`: toda la suite (`tests/**/*.test.ts`), incluidos e2e de CLI, tooling e integración local. El live queda skipped | Nada más que `node_modules` |
 | `pnpm test:watch` | `vitest` en modo watch, misma cobertura que `pnpm test` | Nada |
-| `pnpm test:changed` | `vitest related --run --passWithNoTests`, **sin argumentos** (ver más abajo) | Nada |
+| `pnpm test:changed` | `vitest run --changed`: tests afectados por cambios desde el último commit | Nada |
 | `pnpm test:integration` | `vitest run tests/integration`: systemone local (corre) y live (skipped) | Loopback, sin credenciales |
 | `pnpm test:live` | `node scripts/run-live-tests.mjs`, que corre `vitest run tests/integration/cloudflare.live.test.ts` con `M1_LIVE=1` | Red y credenciales de Cloudflare |
+| `pnpm lint` | `eslint .` (flat config, type-aware en `src/`) | Nada |
 | `pnpm typecheck` | `tsc --noEmit` sobre todo el proyecto | Nada |
 | `pnpm build` | `tsup` a `dist/` (ESM + sourcemaps) | Nada |
 | `pnpm precommit` | `node scripts/precommit-guards.mjs` (las guardas, sin lint-staged ni typecheck) | Archivos staged |
@@ -51,7 +52,7 @@ Notas:
 
 - `pnpm test` no necesita `.env`: los tests usan provider `mock`, un servidor local o el provider live (que se skipea).
 - `pnpm build` y `pnpm test` son independientes: build no corre tests y typecheck no compila nada.
-- `pnpm test:changed` tal como está definido en `package.json:20` no recibe archivos, así que no corre ningún test y sale con código 0 (`No test files found, exiting with code 0`). Su uso real es dentro de lint-staged, que le agrega los archivos staged (`package.json:27`). Ver "Discrepancias detectadas".
+- `pnpm test:changed` usa el grafo de git (`--changed`), no una lista de archivos. Dentro de lint-staged se usa `vitest related` con los staged, que es más preciso.
 
 ## 3. Correr un test puntual
 
@@ -132,45 +133,84 @@ El live no corre en pre-commit, ni con `pnpm test`, ni con `pnpm test:integratio
 
 ```sh
 node scripts/precommit-guards.mjs
-pnpm exec lint-staged
-pnpm run typecheck
+node_modules/.bin/lint-staged   # o `pnpm exec lint-staged` si no está instalado
+node scripts/precommit-typecheck.mjs
 ```
 
 ### Paso 1: guardas de seguridad
 
-`scripts/precommit-guards.mjs` trabaja sobre los archivos staged (`git diff --cached --name-only --diff-filter=ACMR`, `:16-18`) y bloquea:
+`scripts/precommit-guards.mjs` trabaja sobre los archivos staged (`git diff --cached --name-only --diff-filter=ACMR`) y **lee el contenido del índice git** (`git cat-file blob :<path>`), no del working tree: el commit publica lo staged, así que escanear el disco permitiría stagear un secreto y limpiarlo después. Bloquea:
 
-- `.env` y `.env.*`, salvo `.env.example` (`:22`, `:27-30`).
-- Cualquier archivo cuyo basename sea `credentials.json` (`:31-34`).
-- Extensiones de clave o certificado: `.pem`, `.key`, `.p12`, `.pfx` (`:35-38`).
-- Archivos de más de 1 MiB (`:46-49`).
-- Bloques `-----BEGIN ... PRIVATE KEY-----` (`:53-55`).
-- Asignaciones de `CLOUDFLARE_API_TOKEN`, `TYPESAFE_API_KEY` o `LOCAL_API_KEY` con 20 caracteres o más (`:56`), sólo en archivos de texto con extensiones `.ts`, `.mts`, `.cts`, `.js`, `.mjs`, `.json`, `.md`, `.yaml`, `.yml`, `.sh`, `.txt` o `.example` (`:51`).
+- `.env` y `.env.*`, salvo `.env.example`.
+- Cualquier archivo cuyo basename sea `credentials.json`.
+- Extensiones de clave o certificado: `.pem`, `.key`, `.p12`, `.pfx`.
+- Archivos de más de 1 MiB.
+- Bloques `-----BEGIN ... PRIVATE KEY-----` con cuerpo base64 plausible (≥ 40 caracteres), para no marcar fixtures de tests.
+- Asignaciones de `CLOUDFLARE_API_TOKEN`, `TYPESAFE_API_KEY` o `LOCAL_API_KEY` con 20 caracteres o más, sólo en archivos de texto con extensiones `.ts`, `.mts`, `.cts`, `.js`, `.mjs`, `.cjs`, `.json`, `.md`, `.yaml`, `.yml`, `.sh`, `.txt` o `.example`.
+- Marcadores de conflicto sin resolver (`<<<<<<<`, `>>>>>>>`). `=======` solo no se marca porque es un heading Setext válido en Markdown.
+- `package-lock.json` y `yarn.lock` (el repo usa `pnpm`).
+- `.json` staged con sintaxis inválida.
 
 Alcance real: los archivos borrados se ignoran (filtro `ACMR`), los binarios sólo se controlan por tamaño y las variables de otros providers (por ejemplo `SYSTEMONE_API_KEY`) no se detectan por nombre. Si no hay archivos staged, informa `0 archivo(s) staged` y sale 0.
 
 ### Paso 2: lint-staged
 
-`lint-staged` aplica dos reglas (`package.json:26-29`):
+`lint-staged` aplica tres reglas (`package.json` → `lint-staged`):
 
 | Patrón staged | Comando |
 | --- | --- |
-| `*.{ts,mts,cts}` | `vitest related --run --passWithNoTests` con esos archivos |
+| `*.{ts,mts,cts}` | `eslint --fix` y después `vitest related --run --passWithNoTests` |
+| `*.{ts,mts,cts,js,mjs,cjs,json,md,yml,yaml,sh,txt,example}` | `secretlint` (preset recomendado, ver `.secretlintrc.json`) |
 | `examples/*.json` | `node scripts/validate-recipes.mjs` con esos archivos |
 
-`validate-recipes.mjs` corre `m1 recipe validate` con `tsx` por cada receta recibida (`scripts/validate-recipes.mjs:10-12`). Ojo: sólo se validan recetas que estén en `examples/`; una receta nueva en otra carpeta no se valida en el hook.
+`secretlint` es la barrera principal de secretos; el regex de los guards queda como defensa en profundidad. Respeta `.gitignore`, así que un archivo forzado con `git add -f` podría quedar fuera de su alcance (los guards cubren `.env` y credenciales).
 
-### Paso 3: typecheck
+`validate-recipes.mjs` corre `m1 recipe validate` con `tsx` por cada receta recibida. Ojo: sólo se validan recetas que estén en `examples/`; una receta nueva en otra carpeta no se valida en el hook.
 
-`pnpm run typecheck` es `tsc --noEmit` sobre todo el proyecto, no sólo los archivos staged. Un error de tipos en cualquier archivo corta el commit.
+### Paso 3: typecheck condicional
 
-### Lo que el hook no hace
+`scripts/precommit-typecheck.mjs` corre `pnpm run typecheck` (`tsc --noEmit` sobre todo el proyecto) **sólo si hay `*.ts|*.mts|*.cts` staged**. Si no, imprime `typecheck: skip` y sale 0. El costo de `tsc` no se paga en commits de docs o JSON.
 
-- No corre la suite completa: sólo los tests relacionados con los `.ts` staged.
-- No corre `pnpm build`.
-- No corre tests live.
-- No valida recetas fuera de `examples/*.json`.
-- No valida el mensaje de commit.
+### Latencias medidas (Windows)
+
+| Escenario | Tiempo |
+| --- | --- |
+| guards sin staged | ~0,1 s |
+| typecheck skip | ~0,1 s |
+| secretlint 1 `.md` | ~0,4 s |
+| eslint type-aware 1 `.ts` | ~3,9 s |
+| `vitest related` 1 `.ts` | ~1,1 s |
+| `tsc --noEmit` | ~2,5 s |
+| hook completo, sólo docs | ~1,2–2,1 s |
+| hook completo con `.ts` | ~6–8,5 s |
+
+El costo dominante en Windows es el arranque de Node (lint-staged, secretlint), no la lógica.
+
+### commit-msg
+
+`.husky/commit-msg` ejecuta `scripts/check-commit-msg.mjs`, que valida Conventional Commits:
+
+```text
+^(feat|fix|test|docs|refactor|perf|build|ci|chore|revert)(\([a-z0-9._-]+\))?!?: .{8,}$
+```
+
+Además exige header ≤ 100 caracteres y permite `Merge ...`, `Revert ...`, `fixup! ...` y `squash! ...` (rebase). Si el mensaje no cumple, el commit se aborta con el formato esperado.
+
+### pre-push
+
+`.husky/pre-push` ejecuta `scripts/prepush.mjs`:
+
+1. Si entre los commits no pusheados cambió `pnpm-lock.yaml` (o, sin upstream, en `HEAD~10..HEAD`), corre `pnpm audit --audit-level=high`. Si encuentra vulnerabilidades altas o críticas, bloquea el push. Requiere red.
+2. Siempre corre `pnpm test` completo. Es la red de seguridad de los tests que `vitest related` no selecciona (e2e e integración que spawnean procesos).
+
+Sin upstream configurado no rompe: omite el audit y corre la suite.
+
+### Lo que los hooks no hacen
+
+- No corren `pnpm build`.
+- No corren tests live (`M1_LIVE=1`).
+- No validan recetas fuera de `examples/*.json`.
+- No hay CI: los hooks locales son la única barrera.
 
 ### Saltearlo
 
@@ -201,19 +241,19 @@ Formato del mensaje:
 tipo(scope): descripción breve en imperativo
 ```
 
-- `tipo`: el historial usa `feat`, `fix`, `test`, `docs`, `chore` y `harden` (este último es propio del repo).
+- `tipo`: `feat`, `fix`, `test`, `docs`, `refactor`, `perf`, `build`, `ci`, `chore` o `revert` (validado por `commit-msg`).
 - `scope`: el área tocada, por ejemplo `cli`, `core`, `config`, `integration`, `examples`, `husky`, `api`.
-- Descripción: minúscula, sin punto final, sin relleno.
+- Descripción: minúscula, sin punto final, sin relleno, mínimo 8 caracteres.
 
 Ejemplos reales del historial:
 
 ```text
 test(integration): systemone por HTTP real y live test opt-in de Cloudflare
-chore(husky): pre-commit con vitest related, typecheck y guardas de secretos
-fix(config): accountId scoped a cloudflare y auth set --env persiste apiKeyEnv
+chore(tooling): pre-commit por capas con secretlint, commit-msg y lint type-aware
+fix(config): cloudflare resuelve CLOUDFLARE_API_TOKEN por defecto
 ```
 
-No hay commitlint ni ningún validador de mensajes: la convención es social. Lo que sí se exige en la práctica es que cada commit pase el pre-commit, es decir, tests relacionados y typecheck en verde.
+El formato ya no es una convención social: `.husky/commit-msg` lo valida. Para commits de emergencia que no encajan, usá `git commit --no-verify` y documentá el motivo en el cuerpo.
 
 ## 7. Cómo agregar un test
 
@@ -250,7 +290,7 @@ pnpm typecheck
 
 Comportamientos reales que difieren de lo que sugieren los nombres, los scripts o la documentación previa:
 
-1. `package.json:20` define `test:changed` como `vitest related --run --passWithNoTests` sin argumentos. Ejecutado así no corre ningún test y sale 0 (`No test files found`); sólo tiene sentido cuando lint-staged le pasa los archivos staged (`package.json:27`).
+1. `test:changed` usa `vitest run --changed` (cambios desde el último commit). Dentro de lint-staged se usa `vitest related`, que recibe los archivos staged y es más preciso. Los tests que spawnean procesos (`cli`, e2e, integración, tooling) no los selecciona ninguno de los dos; por eso `pre-push` corre la suite completa.
 2. `tests/integration/cloudflare.live.test.ts:19-22` exige `apiKey` y `accountId` resueltos. `kind: cloudflare` toma `CLOUDFLARE_API_TOKEN` y `CLOUDFLARE_ACCOUNT_ID` del entorno por defecto (`src/config/credentials.ts:63-69`), así que con `.env` alcanza.
 3. La versión previa de `README.md` (línea 180 antes de este cambio) describía los tests como "unitarios en `tests/` (engine, expr, intake, normalize, providers, template)": omitía `config.test.ts`, `cli.test.ts`, `examples.test.ts`, `tests/integration/` y `tests/tooling/`, aunque `pnpm test` corre todo eso. Quedó corregido en el README actual.
 4. `scripts/run-live-tests.mjs:5` hardcodea `tests/integration/cloudflare.live.test.ts`: cualquier live nuevo queda fuera de `pnpm test:live` salvo que se edite el script.

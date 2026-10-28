@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+# Pre-commit: guardas de seguridad + tests relacionados con el diff + typecheck.
+set -e
+
+node scripts/precommit-guards.mjs
+pnpm exec lint-staged
+pnpm run typecheck

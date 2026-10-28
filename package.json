@@ -16,7 +16,16 @@
     "build": "tsup src/cli/index.ts src/index.ts --format esm --clean --sourcemap",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:changed": "vitest related --run --passWithNoTests",
+    "test:integration": "vitest run tests/integration",
+    "test:live": "node scripts/run-live-tests.mjs",
+    "precommit": "node scripts/precommit-guards.mjs",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{ts,mts,cts}": "vitest related --run --passWithNoTests",
+    "examples/*.json": "node scripts/validate-recipes.mjs"
   },
   "dependencies": {
     "commander": "^13.1.0",
@@ -30,6 +39,8 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.6.0",
     "tsup": "^8.3.5",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",

@@ -5,7 +5,8 @@ import { runRecipe } from '../../core/engine';
 import { validateRecipe } from '../../core/validate';
 import { loadConfig, resolveProvider } from '../../config/config';
 import { resolveSecrets, loadCredentials } from '../../config/credentials';
-import { createProvider, defaultModelFor } from '../../providers/registry';
+import { loadPreferences } from '../../config/preferences';
+import { createProvider, resolveEffectiveModel } from '../../providers/registry';
 import { buildRunInput } from '../io';
 import { EXIT, fail } from '../output';
 import { renderHuman } from '../../render/human';
@@ -68,25 +69,37 @@ export async function runCommand(recipePath: string, flags: RunFlags): Promise<n
     }
 
     const config = loadConfig({ explicit: flags.config });
+    const preferenceWarnings: string[] = [];
+    const preferences = loadPreferences(preferenceWarnings);
+    if (!json) {
+      for (const warning of preferenceWarnings) process.stderr.write(`  ! ${warning}\n`);
+    }
+
     const { alias, config: providerCfg } = resolveProvider(config, flags.provider ?? recipe.provider, {
       model: flags.model,
       timeoutMs: flags.timeout ? Number(flags.timeout) : undefined,
+    });
+    const effective = resolveEffectiveModel({
+      cfg: providerCfg,
+      flagModel: flags.model,
+      preferredModel: preferences.models?.[alias],
     });
 
     let provider: DecisionProvider;
     let model: string;
     if (dryRun) {
       provider = dryProvider;
-      model = providerCfg.model ?? defaultModelFor(providerCfg.kind);
+      model = effective.model;
     } else {
       const secrets = resolveSecrets(alias, providerCfg);
       const merged = {
         ...providerCfg,
+        model: effective.model,
         apiKey: providerCfg.apiKey ?? secrets.apiKey,
         accountId: providerCfg.accountId ?? secrets.accountId,
       };
       provider = createProvider(alias, merged);
-      model = merged.model ?? defaultModelFor(merged.kind);
+      model = effective.model;
     }
 
     const input = await buildRunInput(

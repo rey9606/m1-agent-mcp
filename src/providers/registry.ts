@@ -24,6 +24,34 @@ export function defaultModelFor(kind: ProviderKind): string {
   }
 }
 
+export type ModelSource = 'flag' | 'preference' | 'config' | 'default';
+
+export interface EffectiveModel {
+  model: string;
+  source: ModelSource;
+}
+
+/**
+ * Precedencia del modelo efectivo:
+ * `--model` > preferencia de usuario > `provider.model` de la config > default del kind.
+ */
+export function resolveEffectiveModel(opts: {
+  cfg: ProviderConfig;
+  flagModel?: string;
+  preferredModel?: string;
+}): EffectiveModel {
+  const flag = opts.flagModel?.trim();
+  if (flag) return { model: flag, source: 'flag' };
+
+  const preference = opts.preferredModel?.trim();
+  if (preference) return { model: preference, source: 'preference' };
+
+  const configured = opts.cfg.model?.trim();
+  if (configured) return { model: configured, source: 'config' };
+
+  return { model: defaultModelFor(opts.cfg.kind), source: 'default' };
+}
+
 export function createProvider(name: string, cfg: ProviderConfig): DecisionProvider {
   switch (cfg.kind) {
     case 'cloudflare':

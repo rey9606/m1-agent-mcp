@@ -31,6 +31,7 @@ export function createTypesafeProvider(name: string, cfg: ProviderConfig): Decis
   return {
     name,
     kind: 'typesafe',
+    capabilities: { images: false },
     async evaluate(request: DecisionRequest, options?: DecideOptions): Promise<DecisionResponse> {
       if (request.images && request.images.length > 0) {
         throw new M1Error('E_PROVIDER', 'JEV no soporta imágenes', {

@@ -228,6 +228,36 @@ describe('runRecipe', () => {
     expect(result.verdict).toBe('pass');
   });
 
+  it('falla con E_CONFIG antes de llamar si el provider no soporta imágenes', async () => {
+    const recipe = validateRecipe({
+      id: 'img-novision',
+      role: 'tester',
+      input: { slots: { shot: { type: 'image' } }, images: ['shot'] },
+      criteria: [{ id: 'a', type: 'noul', instructions: '¿A?' }],
+      stages: [{ id: 's1', questions: ['a'] }],
+    }).recipe;
+
+    const { provider, requests } = makeProvider(() => noul(0.9));
+    const noVision: DecisionProvider = { ...provider, capabilities: { images: false } };
+
+    const err = await expectM1(
+      () =>
+        runRecipe({
+          recipe,
+          input: { shot: 'ignorado.png' },
+          deps: makeDeps(noVision, {
+            resolveInput: async () => ({ vars: {}, imagesBySlot: { shot: [image()] } }),
+          }),
+        }),
+      'E_CONFIG',
+    );
+
+    expect(err.message).toContain('fake-model');
+    expect(err.message).toContain('fake');
+    expect(err.hint).toContain('--image');
+    expect(requests).toHaveLength(0);
+  });
+
   it('envuelve errores del provider en E_PROVIDER con el id de etapa', async () => {
     const recipe = validateRecipe(threeCriteria).recipe;
     const { provider } = makeProvider(() => noul(0.9), { fail: new Error('boom') });

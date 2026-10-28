@@ -97,6 +97,7 @@ export function createMockProvider(name: string, cfg: ProviderConfig): DecisionP
   return {
     name,
     kind: 'mock',
+    capabilities: { images: true },
     async evaluate(request: DecisionRequest, _options?: DecideOptions): Promise<DecisionResponse> {
       const fixtures = loadFixtures(cfg.fixturesDir);
 

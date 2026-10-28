@@ -217,7 +217,22 @@ export async function runRecipe(args: {
       continue;
     }
 
-    // 6. llamada al provider
+    // 6. capacidades: fallar antes de llamar si el modelo no soporta imágenes.
+    if (images.length > 0 && deps.provider.capabilities?.images === false) {
+      const err = new M1Error(
+        'E_CONFIG',
+        `el modelo "${deps.model}" del provider "${deps.providerName}" no soporta imágenes`,
+        {
+          hint: 'usá --model con un modelo con vision o quitá --image',
+          details: { provider: deps.providerName, model: deps.model },
+        },
+      );
+      trace.push({ id: stage.id, status: 'error', questions: [...stage.questions], error: err.message });
+      emit({ type: 'stage:error', stage: stage.id, detail: err.toJSON() });
+      throw err;
+    }
+
+    // 7. llamada al provider
     if (loadedImages.length > 0) {
       try {
         assertImageBudget(loadedImages);

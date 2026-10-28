@@ -33,6 +33,7 @@ export function createSystemOneProvider(name: string, cfg: ProviderConfig): Deci
   return {
     name,
     kind: 'systemone',
+    capabilities: { images: true },
     async evaluate(request: DecisionRequest, options?: DecideOptions): Promise<DecisionResponse> {
       if (!cfg.baseUrl) {
         throw new M1Error('E_CONFIG', 'falta baseUrl del endpoint compatible', {

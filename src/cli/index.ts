@@ -27,6 +27,7 @@ program
   .option('--model <id>', 'modelo a usar (override)')
   .option('--timeout <ms>', 'timeout total por etapa')
   .option('--dry-run', 'arma el request y no llama al proveedor')
+  .option('--print-request', 'imprime el/los request(s) que se enviarían (implica --dry-run)')
   .option('--trace', 'muestra las etapas por stderr')
   .option('--json', 'salida JSON (contrato estable)')
   .option('--compact', 'salida de una línea')

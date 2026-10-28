@@ -25,6 +25,7 @@ export interface RunFlags {
   compact?: boolean;
   trace?: boolean;
   dryRun?: boolean;
+  printRequest?: boolean;
   provider?: string;
   model?: string;
   config?: string;
@@ -58,6 +59,8 @@ const dryProvider: DecisionProvider = {
 
 export async function runCommand(recipePath: string, flags: RunFlags): Promise<never> {
   const json = Boolean(flags.json);
+  const dryRun = Boolean(flags.dryRun || flags.printRequest);
+  const requests: unknown[] = [];
   try {
     const { recipe, warnings } = await loadRecipeFile(recipePath);
     if (!json && warnings.length > 0) {
@@ -72,7 +75,7 @@ export async function runCommand(recipePath: string, flags: RunFlags): Promise<n
 
     let provider: DecisionProvider;
     let model: string;
-    if (flags.dryRun) {
+    if (dryRun) {
       provider = dryProvider;
       model = providerCfg.model ?? defaultModelFor(providerCfg.kind);
     } else {
@@ -109,14 +112,23 @@ export async function runCommand(recipePath: string, flags: RunFlags): Promise<n
         model,
         timeoutMs: flags.timeout ? Number(flags.timeout) : undefined,
         onEvent: (e) => {
+          if (e.type === 'stage:end') {
+            const detail = e.detail as { request?: unknown } | undefined;
+            if (detail?.request) requests.push(detail.request);
+          }
           if (!flags.trace || json) return;
           if (e.type === 'stage:start') process.stderr.write(`  → ${e.stage}\n`);
           if (e.type === 'stage:skip') process.stderr.write(`  ○ ${e.stage} (${String(e.detail ?? '')})\n`);
           if (e.type === 'stage:end') process.stderr.write(`  ✓ ${e.stage}\n`);
         },
       },
-      options: { dryRun: Boolean(flags.dryRun), timeoutMs: flags.timeout ? Number(flags.timeout) : undefined },
+      options: { dryRun, timeoutMs: flags.timeout ? Number(flags.timeout) : undefined },
     });
+
+    if (flags.printRequest) {
+      process.stdout.write(JSON.stringify({ ok: true, agent: { id: recipe.id, role: recipe.role }, requests }, null, 2) + '\n');
+      process.exit(0);
+    }
 
     if (json) {
       process.stdout.write(renderJson(result) + '\n');
@@ -126,7 +138,7 @@ export async function runCommand(recipePath: string, flags: RunFlags): Promise<n
       process.stdout.write(renderHuman(result) + '\n');
     }
 
-    const code = flags.dryRun ? EXIT.pass : EXIT[result.verdict];
+    const code = dryRun ? EXIT.pass : EXIT[result.verdict];
     process.exit(code);
   } catch (e) {
     fail(e, json);

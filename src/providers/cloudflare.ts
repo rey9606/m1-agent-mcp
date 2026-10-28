@@ -162,7 +162,7 @@ export function createCloudflareProvider(name: string, cfg: ProviderConfig): Dec
     name,
     kind: 'cloudflare',
     async evaluate(request: DecisionRequest, options?: DecideOptions): Promise<DecisionResponse> {
-      const accountId = cfg.accountId ?? process.env.CLOUDFLARE_ACCOUNT_ID;
+      const accountId = cfg.accountId || process.env.CLOUDFLARE_ACCOUNT_ID;
       if (!accountId) {
         throw new M1Error('E_CONFIG', 'falta accountId de Cloudflare', {
           hint: 'definí CLOUDFLARE_ACCOUNT_ID o provider.accountId en la config',

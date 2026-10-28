@@ -54,15 +54,22 @@ function parseProvider(alias: string, raw: unknown): ProviderConfig {
     });
   }
   const cfg: ProviderConfig = { kind: kind as ProviderKind };
-  if (typeof p.model === 'string') cfg.model = p.model;
-  if (typeof p.baseUrl === 'string') cfg.baseUrl = p.baseUrl;
-  if (typeof p.accountId === 'string') cfg.accountId = p.accountId;
-  if (typeof p.apiKeyEnv === 'string') cfg.apiKeyEnv = p.apiKeyEnv;
-  if (typeof p.apiKey === 'string') cfg.apiKey = p.apiKey;
+  const str = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined);
+  const model = str(p.model);
+  if (model) cfg.model = model;
+  const baseUrl = str(p.baseUrl);
+  if (baseUrl) cfg.baseUrl = baseUrl;
+  const accountId = str(p.accountId);
+  if (accountId) cfg.accountId = accountId;
+  const apiKeyEnv = str(p.apiKeyEnv);
+  if (apiKeyEnv) cfg.apiKeyEnv = apiKeyEnv;
+  const apiKey = str(p.apiKey);
+  if (apiKey) cfg.apiKey = apiKey;
   if (p.headers && typeof p.headers === 'object') cfg.headers = p.headers as Record<string, string>;
   if (p.unwrap === 'auto' || p.unwrap === 'result' || p.unwrap === 'none') cfg.unwrap = p.unwrap;
   if (typeof p.timeoutMs === 'number') cfg.timeoutMs = p.timeoutMs;
-  if (typeof p.fixturesDir === 'string') cfg.fixturesDir = p.fixturesDir;
+  const fixturesDir = str(p.fixturesDir);
+  if (fixturesDir) cfg.fixturesDir = fixturesDir;
   if (cfg.kind === 'systemone' && !cfg.baseUrl) {
     throw new M1Error('E_CONFIG', `provider "${alias}" (systemone) requiere baseUrl`, {
       hint: 'ej: "baseUrl": "http://localhost:8000/v1/systemone"',

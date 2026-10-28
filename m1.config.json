@@ -1,0 +1,26 @@
+{
+  "default": "cf",
+  "providers": {
+    "cf": {
+      "kind": "cloudflare",
+      "model": "@cf/cloudflare/clef-flash",
+      "apiKeyEnv": "CLOUDFLARE_API_TOKEN"
+    },
+    "ts": {
+      "kind": "typesafe",
+      "model": "jev-latest",
+      "apiKeyEnv": "TYPESAFE_API_KEY"
+    },
+    "local": {
+      "kind": "systemone",
+      "baseUrl": "http://localhost:8000/v1/systemone",
+      "model": "clef-flash",
+      "apiKeyEnv": "LOCAL_API_KEY",
+      "unwrap": "auto"
+    },
+    "mock": {
+      "kind": "mock",
+      "fixturesDir": "./fixtures/mock"
+    }
+  }
+}

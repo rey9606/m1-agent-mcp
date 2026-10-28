@@ -57,8 +57,8 @@ export function deleteCredential(alias: string): boolean {
  */
 export function resolveSecrets(alias: string, cfg: ProviderConfig): Credential {
   const creds = loadCredentials()[alias] ?? {};
-  const apiKey = cfg.apiKey ?? (cfg.apiKeyEnv ? process.env[cfg.apiKeyEnv] : undefined) ?? creds.apiKey;
-  const accountId = cfg.accountId ?? process.env.CLOUDFLARE_ACCOUNT_ID ?? creds.accountId;
+  const apiKey = cfg.apiKey || (cfg.apiKeyEnv ? process.env[cfg.apiKeyEnv] : undefined) || creds.apiKey;
+  const accountId = cfg.accountId || process.env.CLOUDFLARE_ACCOUNT_ID || creds.accountId;
   return { apiKey: apiKey || undefined, accountId: accountId || undefined };
 }
 

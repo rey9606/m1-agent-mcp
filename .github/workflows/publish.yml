@@ -1,0 +1,71 @@
+name: publish
+
+# Publica en npm con Trusted Publishing (OIDC): no hay tokens guardados.
+# Un tag `vX.Y.Z` dispara el release; `workflow_dispatch` sirve para reintentar.
+#
+# Requisito externo (una sola vez): npmjs.com → m1-agent → Settings →
+# Trusted publishing → GitHub Actions, con
+#   owner: rey9606 · repo: m1-agent-mcp · workflow: publish.yml
+# y "Allowed actions" incluyendo **npm publish** (por defecto solo se permite
+# `npm stage publish`). El primer publish debe ocurrir dentro de 2 días desde
+# que se crea la configuración o esta expira.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # obligatorio para el exchange OIDC contra npm
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.6.0 # pineado: sin packageManager en package.json para no ensuciar el lockfile
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false # nunca cachear en un build de release
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Verificar que el tag coincide con package.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::el tag v$tag no coincide con package.json ($pkg)"
+            exit 1
+          fi
+
+      - name: Cortar si esa versión ya está publicada
+        run: |
+          pkg="$(node -p "require('./package.json').version")"
+          if npm view "m1-agent@$pkg" version >/dev/null 2>&1; then
+            echo "::error::m1-agent@$pkg ya existe en el registry: subí la versión antes de tagear"
+            exit 1
+          fi
+
+      - run: pnpm test
+      - run: pnpm typecheck
+      - run: pnpm build
+
+      # Sin NODE_AUTH_TOKEN a propósito: npm detecta el entorno OIDC y hace el
+      # exchange por un token efímero. La procedencia se genera sola en repos
+      # públicos, no hace falta --provenance.
+      - name: Publicar en npm
+        run: npm publish --access public

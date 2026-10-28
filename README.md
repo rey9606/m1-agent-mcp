@@ -338,6 +338,19 @@ pnpm typecheck
 
 El pre-commit corre guardas de seguridad (leyendo el índice git), `secretlint`, ESLint con autofix, tests relacionados con el diff y typecheck condicional (sólo si hay `.ts` staged). El `commit-msg` valida Conventional Commits y el `pre-push` corre `pnpm audit --audit-level=high` si cambió el lockfile más la suite completa. Detalle de cada capa, credenciales del live y convención de commits en [docs/testing.md](https://github.com/rey9606/m1-agent-mcp/blob/main/docs/testing.md).
 
+## Publicar una versión
+
+El paquete se publica solo desde GitHub Actions con **Trusted Publishing** (OIDC): no hay tokens guardados en el repo ni en secrets.
+
+```bash
+npm version patch            # o minor / major: crea commit + tag vX.Y.Z
+git push --follow-tags
+```
+
+El workflow [`.github/workflows/publish.yml`](https://github.com/rey9606/m1-agent-mcp/blob/main/.github/workflows/publish.yml) verifica que el tag coincida con `package.json`, corta si esa versión ya existe, corre tests + typecheck + build y publica con procedencia. Configuración inicial (una sola vez): npmjs.com → **m1-agent** → *Settings* → *Trusted publishing* → GitHub Actions (`rey9606` / `m1-agent-mcp` / `publish.yml`), habilitando **npm publish** además del stage por defecto. El primer publish debe ocurrir dentro de 2 días o la configuración expira.
+
+Publicación manual (fallback): `npm publish --access public` con un token granular que tenga *Bypass 2FA*.
+
 ## Estado del proyecto
 
 - Motor, validación, normalización, agregación y cuatro providers implementados.

@@ -173,11 +173,22 @@ Un endpoint "systemone compatible" es el atajo para no escribir código: mismo b
 | Etapas | `limits.maxStages` (default 64) | `src/core/validate.ts` |
 | Timeout por llamada | 60 s (default) | `src/core/engine.ts`, `src/providers/cloudflare.ts` |
 
+## Testing
+
+```bash
+pnpm test              # suite completa (unitarios, e2e de CLI, integración local); live skipped
+pnpm test:integration  # sólo tests/integration (systemone local; live skipped)
+pnpm test:live         # live contra Cloudflare (opt-in, requiere credenciales)
+pnpm typecheck
+```
+
+El pre-commit corre guardas de secretos, validación de recetas de `examples/`, tests relacionados con el diff y typecheck. Detalle de cada capa, credenciales del live y convención de commits en [docs/testing.md](docs/testing.md).
+
 ## Estado del proyecto
 
 - Motor, validación, normalización, agregación y cuatro providers implementados.
 - Recetas de ejemplo: `examples/copy-checker.json`, `examples/ux-checker.json`.
-- Tests unitarios en `tests/` (engine, expr, intake, normalize, providers, template).
+- Tests en `tests/`: unitarios, contrato de ejemplos, e2e de CLI, tooling, integración local y live opt-in.
 - Pendiente: servidor **MCP** que exponga `run`/`recipe validate` como tools y el catálogo de recetas como resources.
 - Pendiente: concurrencia entre etapas independientes (hoy el motor recorre las etapas en serie).
 
@@ -186,6 +197,7 @@ Un endpoint "systemone compatible" es el atajo para no escribir código: mismo b
 - [docs/recipe-spec.md](docs/recipe-spec.md) — referencia de la receta v1, expresiones, plantillas y veredicto.
 - [docs/for-agents.md](docs/for-agents.md) — manual para que otro agente use la CLI sin equivocarse.
 - [docs/api-contract.md](docs/api-contract.md) — contrato de Clef/JEV y límites/costos.
+- [docs/testing.md](docs/testing.md) — pirámide de tests, comandos, tests live y flujo pre-commit.
 
 ## Discrepancias detectadas
 

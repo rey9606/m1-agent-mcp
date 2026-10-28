@@ -7,11 +7,16 @@
  * - Detecta tokens de Cloudflare pegados por accidente.
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync, statSync } from 'node:fs';
 import { basename } from 'node:path';
 
 const MAX_BYTES = 1024 * 1024;
 const errors = [];
+
+/**
+ * Lee del índice (no del working tree): el commit publica lo staged, así que
+ * escanear el archivo en disco permitiría stagear un secreto y luego limpiarlo.
+ */
+const gitIndex = (args) => execFileSync('git', args, { maxBuffer: 16 * 1024 * 1024 });
 
 const staged = execFileSync('git', ['diff', '--cached', '--name-only', '--diff-filter=ACMR'], {
   encoding: 'utf8',
@@ -39,18 +44,21 @@ for (const file of staged) {
 
   let size;
   try {
-    size = statSync(file).size;
+    size = Number(gitIndex(['cat-file', '-s', `:${file}`]).toString('utf8').trim());
   } catch {
+    // Entrada presente en el diff pero no resoluble en el índice: no bloquear por esto.
     continue;
   }
+  if (!Number.isFinite(size)) continue;
   if (size > MAX_BYTES) {
     errors.push(`${file}: ${(size / 1024 / 1024).toFixed(1)} MiB (máximo 1 MiB)`);
     continue;
   }
 
   if (!/\.(ts|mts|cts|js|mjs|json|md|ya?ml|sh|txt|example)$/i.test(name)) continue;
-  const text = readFileSync(file, 'utf8');
-  if (/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(text)) {
+  const text = gitIndex(['cat-file', 'blob', `:${file}`]).toString('utf8');
+  // Exige cuerpo base64 plausible (>=40 chars) para no marcar fixtures de test.
+  if (/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]{0,200}?[A-Za-z0-9+/]{40,}/.test(text)) {
     errors.push(`${file}: contiene una clave privada`);
   }
   if (/(CLOUDFLARE_API_TOKEN|TYPESAFE_API_KEY|LOCAL_API_KEY)\s*[=:]\s*["']?[A-Za-z0-9_-]{20,}/.test(text)) {

@@ -6,7 +6,9 @@ export interface NormalizedAnswer {
   raw: number | string;
   /** 0..1, con polarity ya aplicada. */
   normalized: number;
-  /** `normalized >= criterion.passAt` (default 0.5). */
+  /** Umbral efectivo (`criterion.passAt`, default 0.5). */
+  passAt: number;
+  /** `normalized >= passAt`. */
   passed: boolean;
   confidence?: number;
   probabilities?: Record<string, number>;
@@ -81,6 +83,7 @@ export function normalizeAnswer(criterion: Criterion, answer: Answer): Normalize
   const result: NormalizedAnswer = {
     raw,
     normalized,
+    passAt,
     passed: normalized >= passAt,
   };
   if (confidence !== undefined) result.confidence = confidence;

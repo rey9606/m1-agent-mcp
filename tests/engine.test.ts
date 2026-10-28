@@ -105,6 +105,22 @@ describe('runRecipe', () => {
     expect(result.trace?.[0]).toMatchObject({ id: 's1', status: 'ran' });
   });
 
+  it('propaga passAt al resultado y al mensaje del issue', async () => {
+    const recipe = validateRecipe({
+      id: 'passat',
+      role: 'tester',
+      criteria: [{ id: 'a', name: 'A', type: 'noul', instructions: '¿A?', passAt: 0.9 }],
+      stages: [{ id: 's1', questions: ['a'] }],
+    }).recipe;
+    const { provider } = makeProvider(() => noul(0.82));
+
+    const result = await runRecipe({ recipe, input: {}, deps: makeDeps(provider) });
+
+    expect(result.criteria[0]?.passAt).toBe(0.9);
+    expect(result.criteria[0]?.passed).toBe(false);
+    expect(result.issues[0]?.message).toContain('< 0.90');
+  });
+
   it('saltea una etapa con when falso sin llamar al provider', async () => {
     const recipe = validateRecipe({
       id: 'when-false',

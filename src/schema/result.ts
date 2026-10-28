@@ -11,6 +11,8 @@ export interface CriterionResult {
   raw: number | string;
   /** Valor normalizado 0..1 (polarity ya aplicada). */
   normalized: number;
+  /** Umbral usado para `passed` (default 0.5). */
+  passAt: number;
   passed: boolean;
   confidence?: number;
   probabilities?: Record<string, number>;

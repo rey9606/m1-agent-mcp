@@ -266,6 +266,7 @@ export async function runRecipe(args: {
           stage: stage.id,
           raw: normalizedAnswer.raw,
           normalized: normalizedAnswer.normalized,
+          passAt: normalizedAnswer.passAt,
           passed: normalizedAnswer.passed,
           ...(normalizedAnswer.confidence !== undefined ? { confidence: normalizedAnswer.confidence } : {}),
           ...(normalizedAnswer.probabilities !== undefined ? { probabilities: normalizedAnswer.probabilities } : {}),
@@ -289,6 +290,7 @@ export async function runRecipe(args: {
           ...answer,
           raw: normalizedAnswer.raw,
           normalized: normalizedAnswer.normalized,
+          passAt: normalizedAnswer.passAt,
           passed: normalizedAnswer.passed,
         };
       }

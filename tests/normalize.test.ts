@@ -33,6 +33,7 @@ function res(partial: Partial<CriterionResult> & Pick<CriterionResult, 'id'>): C
     stage: 's1',
     raw: 0,
     normalized: 0,
+    passAt: 0.5,
     passed: true,
     weight: 1,
     severity: 'major',
@@ -249,6 +250,15 @@ describe('buildIssues', () => {
     expect(SEVERITY_ORDER).toEqual(['blocker', 'major', 'minor', 'info']);
   });
 
+  it('usa el passAt del criterio en el mensaje', () => {
+    const r = withPassAt(
+      res({ id: 'q1', name: 'Umbral', normalized: 0.6, passed: false, severity: 'major' }),
+      0.8,
+    );
+    const [issue] = buildIssues([r]);
+    expect(issue?.message).toBe('Umbral: 0 (normalizado 0.60 < 0.80)');
+  });
+
   it('arma el mensaje estable con nombre, raw, normalizado y umbral', () => {
     const r = withPassAt(
       res({
@@ -311,8 +321,21 @@ describe('decideVerdict', () => {
     expect(decideVerdict([], [accept(false, 'blocker')])).toBe('fail');
   });
 
-  it('falla si un acceptance no-blocker falló', () => {
-    expect(decideVerdict([], [accept(false, 'minor')])).toBe('fail');
+  it('un acceptance minor fallado produce needs_review', () => {
+    expect(decideVerdict([], [accept(false, 'minor')])).toBe('needs_review');
+  });
+
+  it('un acceptance info fallado produce needs_review', () => {
+    expect(decideVerdict([], [accept(false, 'info')])).toBe('needs_review');
+  });
+
+  it('un acceptance major fallado produce fail', () => {
+    expect(decideVerdict([], [accept(false, 'major')])).toBe('fail');
+  });
+
+  it('un criterio blocker fallado produce fail aunque haya acceptance', () => {
+    const results = [res({ id: 'b', severity: 'blocker', passed: false, normalized: 0 })];
+    expect(decideVerdict(results, [accept(true, 'blocker')])).toBe('fail');
   });
 
   it('needs_review si un blocker tiene baja confianza', () => {

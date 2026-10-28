@@ -27,10 +27,9 @@ export function weightedScore(results: CriterionResult[]): number {
   return Math.round((weighted / total) * 100);
 }
 
-/** `passAt` no forma parte de `CriterionResult`; si el motor lo adjunta, se usa para el mensaje. */
+/** `passAt` vive en el resultado; fallback defensivo para resultados externos. */
 function passAtOf(result: CriterionResult): number {
-  const value = (result as CriterionResult & { passAt?: number }).passAt;
-  return typeof value === 'number' ? value : 0.5;
+  return typeof result.passAt === 'number' ? result.passAt : 0.5;
 }
 
 function formatRaw(result: CriterionResult): string {
@@ -94,10 +93,10 @@ export function evaluateAcceptance(
 /**
  * Veredicto determinista.
  *
- * 1. acceptance blocker fallado → fail
- * 2. cualquier otro acceptance fallado → fail
- * 3. criterio blocker con confianza < minConfidence → needs_review
- * 4. sin acceptance y con criterio blocker fallado → fail
+ * 1. acceptance `blocker` o `major` fallado → fail (gate duro)
+ * 2. criterio `blocker` fallado → fail
+ * 3. acceptance `minor` o `info` fallado → needs_review (aviso, no gate)
+ * 4. criterio `blocker` con confianza < minConfidence → needs_review
  * 5. pass
  */
 export function decideVerdict(
@@ -105,8 +104,11 @@ export function decideVerdict(
   acceptance: AcceptanceResult[],
   minConfidence = 0.6,
 ): Verdict {
-  if (acceptance.some((a) => a.severity === 'blocker' && !a.passed)) return 'fail';
-  if (acceptance.some((a) => a.severity !== 'blocker' && !a.passed)) return 'fail';
+  if (acceptance.some((a) => !a.passed && (a.severity === 'blocker' || a.severity === 'major'))) {
+    return 'fail';
+  }
+  if (results.some((r) => r.severity === 'blocker' && !r.passed)) return 'fail';
+  if (acceptance.some((a) => !a.passed)) return 'needs_review';
   if (
     results.some(
       (r) =>
@@ -117,6 +119,5 @@ export function decideVerdict(
   ) {
     return 'needs_review';
   }
-  if (acceptance.length === 0 && results.some((r) => r.severity === 'blocker' && !r.passed)) return 'fail';
   return 'pass';
 }

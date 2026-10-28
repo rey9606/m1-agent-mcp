@@ -6,7 +6,9 @@ import { validateRecipe } from '../../core/validate';
 import { loadConfig, resolveProvider } from '../../config/config';
 import { resolveSecrets, loadCredentials } from '../../config/credentials';
 import { loadPreferences } from '../../config/preferences';
+import { ensureLocalEndpoint } from '../../local/lifecycle';
 import { createProvider, resolveEffectiveModel } from '../../providers/registry';
+import type { LocalAutoStart } from '../../providers/types';
 import { buildRunInput } from '../io';
 import { EXIT, fail } from '../output';
 import { renderHuman } from '../../render/human';
@@ -31,6 +33,16 @@ export interface RunFlags {
   model?: string;
   config?: string;
   timeout?: string;
+  /** Política para levantar el modelo local: ask | always | never. */
+  localStart?: string;
+}
+
+function parseLocalPolicy(value: string | undefined): LocalAutoStart | undefined {
+  if (value === undefined) return undefined;
+  if (value === 'ask' || value === 'always' || value === 'never') return value;
+  throw new M1Error('E_USAGE', `--local-start inválido: "${value}"`, {
+    hint: 'valores permitidos: ask, always, never',
+  });
 }
 
 async function loadRecipeFile(path: string) {
@@ -75,10 +87,11 @@ export async function runCommand(recipePath: string, flags: RunFlags): Promise<n
       for (const warning of preferenceWarnings) process.stderr.write(`  ! ${warning}\n`);
     }
 
-    const { alias, config: providerCfg } = resolveProvider(config, flags.provider ?? recipe.provider, {
+    const { alias, config: resolvedCfg } = resolveProvider(config, flags.provider ?? recipe.provider, {
       model: flags.model,
       timeoutMs: flags.timeout ? Number(flags.timeout) : undefined,
     });
+    let providerCfg = resolvedCfg;
     const effective = resolveEffectiveModel({
       cfg: providerCfg,
       flagModel: flags.model,
@@ -91,6 +104,23 @@ export async function runCommand(recipePath: string, flags: RunFlags): Promise<n
       provider = dryProvider;
       model = effective.model;
     } else {
+      const localPolicy = parseLocalPolicy(flags.localStart);
+      const local = await ensureLocalEndpoint({
+        alias,
+        cfg: providerCfg,
+        ...(localPolicy !== undefined ? { autoStart: localPolicy } : {}),
+        interactive: !json && Boolean(process.stdin.isTTY && process.stderr.isTTY),
+        onStatus: (line) => {
+          if (!json) process.stderr.write(`  … ${line}\n`);
+        },
+      });
+      if (!json) {
+        for (const warning of local.warnings) process.stderr.write(`  ! ${warning}\n`);
+      }
+      if (local.baseUrl && local.baseUrl !== providerCfg.baseUrl) {
+        providerCfg = { ...providerCfg, baseUrl: local.baseUrl };
+      }
+
       const secrets = resolveSecrets(alias, providerCfg);
       const merged = {
         ...providerCfg,

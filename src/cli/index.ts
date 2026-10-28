@@ -5,6 +5,7 @@ import { recipeSchemaCommand, recipeValidateCommand } from './commands/recipe';
 import { authRemoveCommand, authSetCommand, authStatusCommand } from './commands/auth';
 import { doctorCommand } from './commands/doctor';
 import { modelResetCommand, modelShowCommand, modelUseCommand, modelsCommand } from './commands/models';
+import { localStatusCommand, localStopCommand } from './commands/local';
 
 const program = new Command();
 
@@ -27,6 +28,7 @@ program
   .option('--provider <alias>', 'provider a usar (override de la config)')
   .option('--model <id>', 'modelo a usar (override)')
   .option('--timeout <ms>', 'timeout por etapa (no del run completo)')
+  .option('--local-start <mode>', 'ask|always|never: levanta el modelo local si no responde')
   .option('--dry-run', 'arma el request y no llama al proveedor')
   .option('--print-request', 'imprime el/los request(s) que se enviarían (implica --dry-run)')
   .option('--trace', 'muestra las etapas por stderr')
@@ -83,8 +85,29 @@ model
     modelResetCommand(flags);
   });
 
-const recipe = program.command('recipe').description('herramientas de recetas');
-recipe
+const local = program.command('local').description('servidor del modelo local');
+
+local
+  .command('status')
+  .description('muestra si el servidor local está corriendo (sin arrancarlo)')
+  .option('--provider <alias>', 'provider local a consultar (default: el de la config)')
+  .option('--json', 'salida JSON')
+  .option('-c, --config <file>', 'ruta a m1.config.json')
+  .action(async (flags) => {
+    await localStatusCommand(flags);
+  });
+
+local
+  .command('stop')
+  .description('detiene el servidor local registrado')
+  .option('--provider <alias>', 'provider local a detener (default: el de la config)')
+  .option('--json', 'salida JSON')
+  .option('-c, --config <file>', 'ruta a m1.config.json')
+  .action((flags) => {
+    localStopCommand(flags);
+  });
+
+const recipe = program.command('recipe').description('herramientas de recetas');recipe
   .command('validate')
   .description('valida una receta sin ejecutarla')
   .argument('<file>', 'ruta al JSON de la receta')
@@ -139,8 +162,8 @@ program
   .description('diagnóstico del entorno y providers')
   .option('--json', 'salida JSON')
   .option('-c, --config <file>', 'ruta a m1.config.json')
-  .action((flags) => {
-    doctorCommand(flags);
+  .action(async (flags) => {
+    await doctorCommand(flags);
   });
 
 program.parseAsync(process.argv).catch((e) => {

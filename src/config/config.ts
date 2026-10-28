@@ -2,7 +2,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { M1Error } from '../core/errors';
-import type { ProviderConfig, ProviderKind } from '../providers/types';
+import { isLoopbackHost, parseLocalEndpoint } from '../local/lifecycle';
+import type { LocalLaunchConfig, ProviderConfig, ProviderKind } from '../providers/types';
 
 export interface AppConfig {
   defaultProvider: string;
@@ -42,6 +43,71 @@ export function findConfigPath(explicit?: string, cwd = process.cwd()): string |
   return configCandidates(cwd).find((p) => existsSync(p));
 }
 
+function parseLaunch(alias: string, raw: unknown): LocalLaunchConfig {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new M1Error('E_CONFIG', `provider "${alias}": launch inválido`, {
+      hint: 'debe ser un objeto, ej: { "args": ["-hf", "LiquidAI/d1-2B-GGUF:Q8_0"] }',
+    });
+  }
+  const p = raw as Record<string, unknown>;
+  const launch: LocalLaunchConfig = {};
+
+  if (p.command !== undefined) {
+    if (typeof p.command !== 'string' || p.command.trim() === '') {
+      throw new M1Error('E_CONFIG', `provider "${alias}": launch.command debe ser un string no vacío`);
+    }
+    launch.command = p.command.trim();
+  }
+
+  if (p.args !== undefined) {
+    if (
+      !Array.isArray(p.args) ||
+      p.args.length === 0 ||
+      p.args.some((arg) => typeof arg !== 'string')
+    ) {
+      throw new M1Error('E_CONFIG', `provider "${alias}": launch.args debe ser un array de strings no vacío`, {
+        hint: 'ej: ["-hf", "LiquidAI/d1-2B-GGUF:Q8_0"]',
+      });
+    }
+    launch.args = [...(p.args as string[])];
+  }
+  if (!launch.args) {
+    throw new M1Error('E_CONFIG', `provider "${alias}": launch requiere args`, {
+      hint: 'ej: "launch": { "args": ["-hf", "LiquidAI/d1-2B-GGUF:Q8_0"] }',
+    });
+  }
+
+  if (p.port !== undefined) {
+    if (typeof p.port !== 'number' || !Number.isInteger(p.port) || p.port < 1 || p.port > 65_535) {
+      throw new M1Error('E_CONFIG', `provider "${alias}": launch.port debe ser un entero entre 1 y 65535`);
+    }
+    launch.port = p.port;
+  }
+
+  if (p.healthPath !== undefined) {
+    if (typeof p.healthPath !== 'string' || p.healthPath.trim() === '') {
+      throw new M1Error('E_CONFIG', `provider "${alias}": launch.healthPath debe ser un string no vacío`);
+    }
+    launch.healthPath = p.healthPath.trim();
+  }
+
+  if (p.startTimeoutMs !== undefined) {
+    if (typeof p.startTimeoutMs !== 'number' || !Number.isInteger(p.startTimeoutMs) || p.startTimeoutMs <= 0) {
+      throw new M1Error('E_CONFIG', `provider "${alias}": launch.startTimeoutMs debe ser un entero positivo`);
+    }
+    launch.startTimeoutMs = p.startTimeoutMs;
+  }
+
+  if (p.autoStart !== undefined) {
+    if (p.autoStart !== 'ask' && p.autoStart !== 'always' && p.autoStart !== 'never') {
+      throw new M1Error('E_CONFIG', `provider "${alias}": launch.autoStart debe ser ask, always o never`);
+    }
+    launch.autoStart = p.autoStart;
+  }
+
+  return launch;
+}
+
 function parseProvider(alias: string, raw: unknown): ProviderConfig {
   if (typeof raw !== 'object' || raw === null) {
     throw new M1Error('E_CONFIG', `provider "${alias}" inválido`, { hint: 'debe ser un objeto con al menos { "kind": ... }' });
@@ -74,6 +140,20 @@ function parseProvider(alias: string, raw: unknown): ProviderConfig {
     throw new M1Error('E_CONFIG', `provider "${alias}" (systemone) requiere baseUrl`, {
       hint: 'ej: "baseUrl": "http://localhost:8000/v1/systemone"',
     });
+  }
+  if (p.launch !== undefined) {
+    if (cfg.kind !== 'systemone') {
+      throw new M1Error('E_CONFIG', `provider "${alias}": launch sólo aplica a kind "systemone"`);
+    }
+    cfg.launch = parseLaunch(alias, p.launch);
+  }
+  if (cfg.launch) {
+    const endpoint = parseLocalEndpoint(cfg.baseUrl!);
+    if (!isLoopbackHost(endpoint.host)) {
+      throw new M1Error('E_CONFIG', `provider "${alias}": launch requiere un baseUrl loopback`, {
+        hint: `"${endpoint.host}" no es local; usá 127.0.0.1 o localhost`,
+      });
+    }
   }
   return cfg;
 }

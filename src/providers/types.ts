@@ -57,6 +57,28 @@ export interface DecisionResponse {
 
 export type ProviderKind = 'cloudflare' | 'typesafe' | 'openrouter' | 'systemone' | 'mock';
 
+/** Política para levantar un servidor local cuando no responde. */
+export type LocalAutoStart = 'ask' | 'always' | 'never';
+
+/**
+ * Cómo levantar el servidor local (p. ej. `llama-server`).
+ * Sólo aplica a providers `kind: systemone` con `baseUrl` loopback.
+ */
+export interface LocalLaunchConfig {
+  /** Ejecutable. Default: `llama-server`. */
+  command?: string;
+  /** Argumentos. Admite `{port}`, `{host}`, `{model}` y `{baseUrl}`. */
+  args?: string[];
+  /** Puerto preferido. Default: el puerto de `baseUrl`. */
+  port?: number;
+  /** Ruta de health relativa al origin. Default: `/health`. */
+  healthPath?: string;
+  /** Espera máxima a que el servidor quede listo. Default: 180000. */
+  startTimeoutMs?: number;
+  /** `ask` pregunta en TTY; `always` arranca sin preguntar; `never` no arranca. */
+  autoStart?: LocalAutoStart;
+}
+
 export interface ProviderConfig {
   kind: ProviderKind;
   model?: string;
@@ -72,6 +94,8 @@ export interface ProviderConfig {
   timeoutMs?: number;
   /** Sólo mock: directorio de fixtures. */
   fixturesDir?: string;
+  /** Sólo systemone local: cómo levantar el servidor si no está corriendo. */
+  launch?: LocalLaunchConfig;
 }
 
 export interface DecideOptions {

@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadConfig } from '../../config/config';
 import { resolveSecrets } from '../../config/credentials';
+import { localStatus } from '../../local/lifecycle';
 import { fail } from '../output';
 
 export interface DoctorFlags {
@@ -9,7 +10,7 @@ export interface DoctorFlags {
   config?: string;
 }
 
-export function doctorCommand(flags: DoctorFlags): never {
+export async function doctorCommand(flags: DoctorFlags): Promise<never> {
   try {
     const config = loadConfig({ explicit: flags.config });
     const checks: Array<{ name: string; ok: boolean; detail: string }> = [];
@@ -19,22 +20,29 @@ export function doctorCommand(flags: DoctorFlags): never {
     checks.push({ name: '.env', ok: existsSync(join(process.cwd(), '.env')), detail: existsSync(join(process.cwd(), '.env')) ? '.env presente' : 'sin .env (opcional)' });
     checks.push({ name: 'examples', ok: existsSync(join(process.cwd(), 'examples')), detail: 'examples/' });
 
-    const providers = Object.entries(config.providers).map(([alias, cfg]) => {
-      let ok = true;
-      let detail: string = cfg.kind;
-      try {
-        const s = resolveSecrets(alias, cfg);
-        if (cfg.kind === 'cloudflare') ok = Boolean(s.apiKey && s.accountId);
-        else if (cfg.kind === 'typesafe') ok = Boolean(s.apiKey);
-        else if (cfg.kind === 'systemone') ok = Boolean(cfg.baseUrl);
-        else ok = true;
-        detail = `${cfg.kind}${cfg.model ? ` · ${cfg.model}` : ''}`;
-      } catch (e) {
-        ok = false;
-        detail = (e as Error).message;
-      }
-      return { alias, ok, detail };
-    });
+    const providers = await Promise.all(
+      Object.entries(config.providers).map(async ([alias, cfg]) => {
+        let ok = true;
+        let detail: string = cfg.kind;
+        try {
+          const s = resolveSecrets(alias, cfg);
+          if (cfg.kind === 'cloudflare') ok = Boolean(s.apiKey && s.accountId);
+          else if (cfg.kind === 'typesafe') ok = Boolean(s.apiKey);
+          else if (cfg.kind === 'systemone') ok = Boolean(cfg.baseUrl);
+          else ok = true;
+          detail = `${cfg.kind}${cfg.model ? ` · ${cfg.model}` : ''}`;
+          if (cfg.kind === 'systemone' && cfg.launch) {
+            const status = await localStatus(alias, cfg);
+            ok = status.state === 'running';
+            detail = `${detail} · local ${status.state} :${status.port}`;
+          }
+        } catch (e) {
+          ok = false;
+          detail = (e as Error).message;
+        }
+        return { alias, ok, detail };
+      }),
+    );
 
     const usable = providers.filter((p) => p.ok).length;
     const ready = checks.find((c) => c.name === 'node')?.ok && usable > 0;

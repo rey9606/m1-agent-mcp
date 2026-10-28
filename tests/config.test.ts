@@ -146,6 +146,87 @@ describe('parseConfig', () => {
   });
 });
 
+describe('parseConfig: launch local', () => {
+  const base = {
+    kind: 'systemone',
+    baseUrl: 'http://127.0.0.1:9931/v1/systemone',
+    model: 'lfm2-d1',
+  };
+
+  it('parsea launch y conserva sus campos', () => {
+    const config = parseConfig({
+      providers: {
+        liquid: {
+          ...base,
+          launch: {
+            command: 'llama-server',
+            args: ['-hf', 'LiquidAI/d1-2B-GGUF:Q8_0'],
+            port: 9931,
+            startTimeoutMs: 240_000,
+            autoStart: 'always',
+          },
+        },
+      },
+    });
+
+    expect(config.providers.liquid?.launch).toEqual({
+      command: 'llama-server',
+      args: ['-hf', 'LiquidAI/d1-2B-GGUF:Q8_0'],
+      port: 9931,
+      startTimeoutMs: 240_000,
+      autoStart: 'always',
+    });
+  });
+
+  it('exige launch.args', () => {
+    const error = catchM1(() =>
+      parseConfig({ providers: { liquid: { ...base, launch: { port: 9931 } } } }),
+    );
+
+    expect(error.code).toBe('E_CONFIG');
+    expect(error.message).toContain('args');
+  });
+
+  it('rechaza launch en un kind que no es systemone', () => {
+    const error = catchM1(() =>
+      parseConfig({
+        providers: { cf: { kind: 'cloudflare', launch: { args: ['x'] } } },
+      }),
+    );
+
+    expect(error.code).toBe('E_CONFIG');
+    expect(error.message).toContain('systemone');
+  });
+
+  it('rechaza launch con baseUrl remoto', () => {
+    const error = catchM1(() =>
+      parseConfig({
+        providers: {
+          liquid: {
+            ...base,
+            baseUrl: 'https://api.example.com/v1/systemone',
+            launch: { args: ['-hf', 'repo'] },
+          },
+        },
+      }),
+    );
+
+    expect(error.code).toBe('E_CONFIG');
+    expect(error.message).toContain('loopback');
+  });
+
+  it('rechaza autoStart inválido', () => {
+    const error = catchM1(() =>
+      parseConfig({
+        providers: { liquid: { ...base, launch: { args: ['-hf', 'repo'], autoStart: 'yes' } } },
+      }),
+    );
+
+    expect(error.code).toBe('E_CONFIG');
+    expect(error.message).toContain('ask, always o never');
+  });
+});
+
 describe('findConfigPath', () => {
   it('falla con E_CONFIG si la ruta explícita no existe', () => {
     const dir = makeTmp();

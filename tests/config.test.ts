@@ -269,6 +269,33 @@ describe('resolveSecrets', () => {
     });
   });
 
+  it('CLOUDFLARE_ACCOUNT_ID sólo aplica a kind cloudflare', () => {
+    vi.stubEnv('CLOUDFLARE_ACCOUNT_ID', 'env-acc');
+
+    expect(credentials.resolveSecrets('ts', cfg({ kind: 'typesafe' })).accountId).toBeUndefined();
+    expect(credentials.resolveSecrets('cf', cfg({})).accountId).toBe('env-acc');
+  });
+
+  it('usa el apiKeyEnv guardado por auth set --env', () => {
+    credentials.saveCredential('cf', { apiKeyEnv: 'TEST_CF_KEY' });
+    vi.stubEnv('TEST_CF_KEY', 'env-key');
+
+    expect(credentials.resolveSecrets('cf', cfg({}))).toEqual({
+      apiKey: 'env-key',
+      accountId: undefined,
+    });
+  });
+
+  it('ignora variables de entorno vacías (no pisan credentials.json)', () => {
+    credentials.saveCredential('cf', { apiKey: 'cred-key', accountId: 'cred-acc' });
+    vi.stubEnv('TEST_CF_KEY', '');
+    vi.stubEnv('CLOUDFLARE_ACCOUNT_ID', '');
+
+    expect(
+      credentials.resolveSecrets('cf', cfg({ apiKeyEnv: 'TEST_CF_KEY' })),
+    ).toEqual({ apiKey: 'cred-key', accountId: 'cred-acc' });
+  });
+
   it('usa credentials.json cuando no hay config ni env', () => {
     credentials.saveCredential('cf', { apiKey: 'cred-key', accountId: 'cred-acc' });
 

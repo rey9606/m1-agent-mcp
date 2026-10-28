@@ -7,6 +7,8 @@ import type { ProviderConfig } from '../providers/types';
 export interface Credential {
   apiKey?: string;
   accountId?: string;
+  /** Nombre de la variable de entorno que contiene la API key (guardado por `auth set --env`). */
+  apiKeyEnv?: string;
 }
 
 export type Credentials = Record<string, Credential>;
@@ -53,13 +55,22 @@ export function deleteCredential(alias: string): boolean {
 
 /**
  * Resuelve secreto + accountId.
- * Precedencia: config (apiKey/accountId explícito) > env (apiKeyEnv / *_ACCOUNT_ID) > credentials.json[alias].
+ * Precedencia: config (apiKey/accountId/apiKeyEnv) > env (apiKeyEnv / CLOUDFLARE_ACCOUNT_ID) > credentials.json[alias].
+ * `CLOUDFLARE_ACCOUNT_ID` sólo aplica a providers `kind: cloudflare`.
+ * Los valores vacíos se ignoran (no pisan el siguiente nivel).
  */
 export function resolveSecrets(alias: string, cfg: ProviderConfig): Credential {
   const creds = loadCredentials()[alias] ?? {};
-  const apiKey = cfg.apiKey || (cfg.apiKeyEnv ? process.env[cfg.apiKeyEnv] : undefined) || creds.apiKey;
-  const accountId = cfg.accountId || process.env.CLOUDFLARE_ACCOUNT_ID || creds.accountId;
-  return { apiKey: apiKey || undefined, accountId: accountId || undefined };
+  const apiKeyEnv = cfg.apiKeyEnv || creds.apiKeyEnv || undefined;
+  const envApiKey = apiKeyEnv ? process.env[apiKeyEnv] || undefined : undefined;
+  const apiKey = cfg.apiKey || envApiKey || creds.apiKey;
+  const envAccountId =
+    cfg.kind === 'cloudflare' ? process.env.CLOUDFLARE_ACCOUNT_ID || undefined : undefined;
+  const accountId = cfg.accountId || envAccountId || creds.accountId;
+  return {
+    apiKey: apiKey || undefined,
+    accountId: accountId || undefined,
+  };
 }
 
 export function redact(value: string | undefined): string {

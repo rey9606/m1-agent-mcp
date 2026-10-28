@@ -14,13 +14,15 @@ export interface AuthFlags {
 export function authSetCommand(alias: string, flags: AuthFlags): never {
   try {
     if (flags.env) {
+      saveCredential(alias, { apiKeyEnv: flags.env });
       const payload = {
         ok: true,
         alias,
-        stored: false,
-        message: `agregá ${flags.env}=... a tu .env (o exportala en el entorno) y no guardes el secreto en disco`,
+        stored: true,
+        apiKeyEnv: flags.env,
+        message: `"${alias}" usará la variable de entorno ${flags.env}; definila en tu .env o en el entorno`,
       };
-      process.stdout.write((flags.json ? JSON.stringify(payload) : `  → ${payload.message}`) + '\n');
+      process.stdout.write((flags.json ? JSON.stringify(payload) : `  ✓ ${payload.message}`) + '\n');
       process.exit(0);
     }
     if (!flags.token && !flags.accountId) {

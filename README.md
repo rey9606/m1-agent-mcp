@@ -43,7 +43,7 @@ Alternativa para guardar credenciales sin `.env`:
 pnpm m1 auth set cf --token <api-token> --account-id <account-id>
 ```
 
-Se guardan en `~/.config/m1-agent/credentials.json` (modo 0600 best-effort).
+Se guardan en `~/.config/m1-agent/credentials.json` (modo 0600 best-effort). Alternativa sin guardar el secreto: `pnpm m1 auth set cf --env CLOUDFLARE_API_TOKEN` persiste sólo el nombre de la variable en `credentials.json`; el valor se lee del entorno en cada corrida.
 
 ## Quickstart
 
@@ -144,7 +144,9 @@ Puntos clave:
 | `systemone` | `local-decision` (configurable) | `baseUrl` obligatorio | Sí | opcional (`apiKeyEnv` o `SYSTEMONE_API_KEY`) |
 | `mock` | `mock` | — | Ignora | — |
 
-La precedencia de secretos es: `apiKey`/`accountId` explícitos en la config > variable de entorno (`apiKeyEnv`, y `CLOUDFLARE_ACCOUNT_ID` para la cuenta) > `~/.config/m1-agent/credentials.json`.
+La precedencia de secretos es: `apiKey`/`accountId` explícitos en la config > variable de entorno (`apiKeyEnv`, y `CLOUDFLARE_ACCOUNT_ID` sólo para `kind: cloudflare`) > `~/.config/m1-agent/credentials.json`. Los valores vacíos se ignoran.
+
+Orden de selección del provider: `--provider` > `provider` de la receta > `default` de `m1.config.json`.
 
 ### Agregar un proveedor nuevo
 
@@ -168,7 +170,7 @@ Un endpoint "systemone compatible" es el atajo para no escribir código: mismo b
 | Body HTTP estimado | 13 MiB | `src/intake/images.ts` |
 | Megapíxeles por imagen | 16 MP | `src/intake/images.ts` |
 | Formatos de imagen | PNG, JPEG, WebP (por magic bytes) | `src/intake/images.ts` |
-| Etapas | `limits.maxStages` (default efectivo 32, tope de esquema 64) | `src/core/validate.ts` |
+| Etapas | `limits.maxStages` (default 64) | `src/core/validate.ts` |
 | Timeout por llamada | 60 s (default) | `src/core/engine.ts`, `src/providers/cloudflare.ts` |
 
 ## Estado del proyecto
@@ -189,14 +191,8 @@ Un endpoint "systemone compatible" es el atajo para no escribir código: mismo b
 
 Comportamientos reales que difieren de lo que sugieren los nombres, la ayuda o la documentación previa:
 
-1. `src/schema/recipe.ts:144` permite `limits.maxStages` hasta 64, pero `src/core/validate.ts:100` aplica un default de 32 y rechaza cualquier receta con más etapas si no se sube el límite explícitamente.
-2. `src/schema/recipe.ts:158` declara `provider` en la receta, pero `src/cli/commands/run.ts:71` lo ignora: el proveedor sale de `--provider` o del `default` de la config.
-3. `src/schema/recipe.ts:164` declara `outputs`, pero ningún renderer lo lee (`src/render/json.ts`, `human.ts`, `compact.ts`): la salida siempre incluye todos los campos.
-4. `src/core/aggregate.ts:31-34` intenta leer `passAt` de `CriterionResult`, pero el motor no lo adjunta (`src/core/engine.ts:260-274`). Los mensajes de issue siempre muestran el umbral `0.50`, aunque el criterio tenga `passAt: 0.7`.
-5. `src/core/aggregate.ts:108-109`: `acceptance.severity` no cambia el veredicto; cualquier acceptance fallado da `fail`, sea `blocker` o no.
-6. `src/cli/index.ts:28` describe `--timeout` como "timeout total por etapa"; se aplica por llamada (etapa), no al run completo (`src/core/engine.ts:111`, `src/core/engine.ts:234`).
-7. `src/cli/index.ts:66` describe `auth set --env` como "sólo indica la variable de entorno a usar", pero `src/cli/commands/auth.ts:16-25` no persiste nada: solo imprime un mensaje y sale con 0.
-8. `src/config/credentials.ts:61` resuelve `accountId` desde `CLOUDFLARE_ACCOUNT_ID` para cualquier `kind`, no solo `cloudflare`.
-9. `.env.example:1-6` no declara `LOCAL_API_KEY` ni `SYSTEMONE_API_KEY`, aunque `m1.config.example.json:19` usa `LOCAL_API_KEY` y `src/providers/systemone.ts:44` busca `SYSTEMONE_API_KEY` por defecto.
-10. `--print-request`/`--dry-run` no respeta `when`: `src/core/engine.ts:137-155` siembra respuestas neutras (`0.5` o la primera opción) y `src/core/engine.ts:163-179` saltea la evaluación de `when`, así que imprime todas las etapas. El veredicto del dry-run es `fail` con score 0, pero el exit code es 0 (`src/cli/commands/run.ts:141`).
-11. `src/intake/images.ts:14` impone además un máximo de 16 MP por imagen, que no figuraba en la lista de límites original.
+1. `src/schema/recipe.ts:164` declara `outputs`, pero ningún renderer lo lee (`src/render/json.ts`, `human.ts`, `compact.ts`): la salida siempre incluye todos los campos.
+2. `--print-request`/`--dry-run` no respeta `when`: `src/core/engine.ts:137-155` siembra respuestas neutras (`0.5` o la primera opción) y `src/core/engine.ts:163-179` saltea la evaluación de `when`, así que imprime todas las etapas. El veredicto del dry-run es `fail` con score 0, pero el exit code es 0 (`src/cli/commands/run.ts:141`).
+3. `src/intake/images.ts:14` impone además un máximo de 16 MP por imagen, que no figuraba en la lista de límites original.
+4. `.env.example` declara `LOCAL_API_KEY`, pero `src/providers/systemone.ts:44` busca `SYSTEMONE_API_KEY` por defecto: si usás el provider local sin `apiKeyEnv`, exportá `SYSTEMONE_API_KEY`.
+5. El motor recorre las etapas en serie (no hay paralelismo entre etapas independientes); el paralelismo es dentro de cada request (N preguntas).

@@ -64,7 +64,7 @@ Detalles:
 6. **Agrupá en etapas.** Todo lo que se puede preguntar junto va en una etapa (una llamada). Lo que depende de respuestas previas va en una etapa posterior.
 7. **Agregá `when`** solo si la etapa es condicional, referenciando ids ya calculados.
 8. **Agregá `derived`** si necesitás un índice compuesto; se evalúa en orden y antes de `acceptance`.
-9. **Agregá `acceptance`** para las condiciones duras del negocio. Sin acceptance, solo los `blocker` pueden reprobar.
+9. **Agregá `acceptance`** para las condiciones duras del negocio. `blocker`/`major` reprobadas dan `fail`; `minor`/`info` dan `needs_review`. Los criterios `blocker` también reproeban por sí solos.
 10. **Validá, imprimí el request y corré**: `recipe validate`, `--print-request`, después `--json`. Probá primero con `--provider mock` para verificar el flujo.
 
 Reglas de diseño que evitan problemas:
@@ -137,7 +137,7 @@ Reglas de diseño que evitan problemas:
 | `0` | `pass` | Aceptar. Si hubo `--dry-run` o `--print-request`, no hubo veredicto real: el 0 solo indica que el request se armó. |
 | `1` | `fail` | Leer `issues[]`, aplicar `remediation` y volver a evaluar. No es un error de infraestructura. |
 | `2` | — | Error. Parsear el JSON de stderr, corregir según `error.code` y `error.hint`. No reintentar igual. |
-| `3` | `needs_review` | Un criterio `blocker` tiene confianza baja. Escalar a revisión humana o subir evidencia/contexto y reejecutar. |
+| `3` | `needs_review` | Un criterio `blocker` tiene confianza baja, o un `acceptance` `minor`/`info` falló. Escalar a revisión humana o subir evidencia/contexto y reejecutar. |
 
 En errores con `--json`, el JSON va a **stderr** y el stdout queda vacío:
 
@@ -247,8 +247,6 @@ pnpm m1 auth remove cf
 
 ## Discrepancias detectadas
 
-1. `src/cli/index.ts:66` promete que `auth set --env <VAR>` "indica la variable de entorno a usar", pero `src/cli/commands/auth.ts:16-25` no escribe config ni credenciales: solo imprime un mensaje y sale con 0. Hay que configurar `apiKeyEnv` a mano en `m1.config.json`.
-2. `src/cli/commands/run.ts:141`: con `--dry-run` o `--print-request` el exit code siempre es 0, aunque el veredicto interno sea `fail`.
-3. `--print-request` imprime todas las etapas, incluso las que un `when` saltearía en una corrida real (`src/core/engine.ts:137-179`).
-4. `src/cli/index.ts:28`: `--timeout` es por etapa, no un timeout total del run.
-5. `src/config/credentials.ts:61`: el `accountId` cae a `CLOUDFLARE_ACCOUNT_ID` para cualquier provider, no solo Cloudflare.
+1. `src/cli/commands/run.ts:141`: con `--dry-run` o `--print-request` el exit code siempre es 0, aunque el veredicto interno sea `fail`.
+2. `--print-request` imprime todas las etapas, incluso las que un `when` saltearía en una corrida real (`src/core/engine.ts:137-179`).
+3. `.env.example` declara `LOCAL_API_KEY`, pero `src/providers/systemone.ts:44` usa `SYSTEMONE_API_KEY` por defecto si el provider no define `apiKeyEnv`.

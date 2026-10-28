@@ -31,7 +31,7 @@ Referencia del formato que consume el motor. Fuente de verdad: `src/schema/recip
 | `role` | string | **sí** | — | No vacío. Describe el rol del agente. |
 | `description` | string | no | — | Texto libre. |
 | `whenToUse` | string | no | — | Texto libre, orientativo. |
-| `provider` | string | no | — | Declarado, pero **no lo usa el motor**: el provider se resuelve por `--provider` o por el `default` de la config. |
+| `provider` | string | no | — | Alias del provider en la config. `run` lo usa cuando no se pasa `--provider`; `--provider` tiene prioridad. |
 | `input` | objeto | no | `{ "slots": {}, "images": [] }` | Ver [input](#input). |
 | `criteria` | array | **sí** | — | Mínimo 1. Ver [criterios](#criterios). |
 | `stages` | array | **sí** | — | Mínimo 1. Ver [etapas](#etapas). |
@@ -160,13 +160,13 @@ Se evalúan **en orden de declaración**, después de todas las etapas y antes d
 | --- | --- | --- | --- |
 | `id` | string | — | No vacío. Único. No puede colisionar con un id de criterio. |
 | `expr` | string | — | Expresión válida; cualquier resultado truthy cuenta como `passed`. |
-| `severity` | severidad | `"major"` | Se reporta en el resultado, pero **no cambia el veredicto**: cualquier acceptance fallado da `fail`. |
+| `severity` | severidad | `"major"` | `blocker`/`major` fallado → `fail`; `minor`/`info` fallado → `needs_review`. |
 
 ## Limits
 
 | Campo | Tipo | Default | Reglas |
 | --- | --- | --- | --- |
-| `maxStages` | entero | 32 efectivo | 1..64 en el esquema; `validateRecipe` compara contra 32 si no se declara. |
+| `maxStages` | entero | 64 | 1..64 en el esquema; `validateRecipe` usa 64 si no se declara. |
 | `timeoutMs` | entero | 60000 | Timeout por llamada al proveedor. |
 | `minConfidence` | number | 0.6 | 0..1. Si un criterio `blocker` con confianza definida queda por debajo, el veredicto es `needs_review`. |
 
@@ -249,7 +249,7 @@ Solo se renderizan en `state` (`recipe.input.state` y `stages[].state`). No se a
 | `{{criteria.<id>.choice}}` | Opción elegida (string), para `choice`. |
 | `{{criteria.<id>.confidence}}` | Confianza, si existe. |
 
-Propiedades reales de `answers`, según el motor (`src/core/engine.ts:286-291`): se copia la respuesta del proveedor y se sobrescriben `raw`, `normalized` y `passed`. Por eso `answers.CP-2.choice`, `answers.CP-1.normalized` y `answers.UX-1.confidence` funcionan; `answers.X.passAt` no existe.
+Propiedades reales de `answers`, según el motor (`src/core/engine.ts:286-291`): se copia la respuesta del proveedor y se sobrescriben `raw`, `normalized`, `passAt` y `passed`. Por eso `answers.CP-2.choice`, `answers.CP-1.normalized`, `answers.UX-1.confidence` y `answers.X.passAt` funcionan.
 
 ### Reglas de resolución
 
@@ -289,17 +289,18 @@ Se emite un issue por cada criterio con `passed === false`, ordenados por severi
 
 ### Orden de `decideVerdict`
 
-1. Si algún `acceptance` `blocker` falló → `fail`.
-2. Si algún `acceptance` no `blocker` falló → `fail`.
-3. Si algún criterio `blocker` con `confidence` definida tiene `confidence < minConfidence` → `needs_review`.
-4. Si no hay `acceptance` y algún criterio `blocker` falló → `fail`.
+1. Si algún `acceptance` `blocker` o `major` falló → `fail`.
+2. Si algún criterio `blocker` falló → `fail`.
+3. Si algún `acceptance` `minor` o `info` falló → `needs_review`.
+4. Si algún criterio `blocker` con `confidence` definida tiene `confidence < minConfidence` → `needs_review`.
 5. En cualquier otro caso → `pass`.
 
 Consecuencias:
 
-- Con `acceptance` declarado, el veredicto depende solo de los acceptance (más el chequeo de confianza). Un criterio no-`blocker` puede fallar y aun así el veredicto ser `pass`.
-- Sin `acceptance`, solo los criterios `blocker` pueden producir `fail`.
-- `needs_review` gana sobre `pass`, pero pierde contra `fail` por acceptance.
+- `acceptance` con severidad `blocker`/`major` es un gate duro; `minor`/`info` degrada a `needs_review` sin reprobar.
+- Un criterio `blocker` fallado produce `fail` aunque exista `acceptance`.
+- Un criterio no-`blocker` puede fallar y aun así el veredicto ser `pass`.
+- `needs_review` gana sobre `pass`, pero pierde contra `fail`.
 - `minConfidence` sale de `limits.minConfidence` (default 0.6). Solo aplica a criterios con confianza: `choice` y `score`.
 
 ## Ejemplos
@@ -421,9 +422,5 @@ Ambas pasan `pnpm m1 recipe validate`.
 
 ## Discrepancias detectadas
 
-1. `src/core/validate.ts:100` usa 32 como default de `maxStages`, mientras que `src/schema/recipe.ts:144` permite hasta 64. Una receta con 33..64 etapas requiere declarar `limits.maxStages`.
-2. `src/core/aggregate.ts:108-109`: `acceptance.severity` se reporta pero no altera el veredicto; cualquier acceptance fallado da `fail`.
-3. `src/core/aggregate.ts:31-34`: el umbral que muestra el mensaje de issue es siempre 0.5 porque `passAt` no viaja en `CriterionResult` (`src/core/engine.ts:260-274`).
-4. `src/schema/recipe.ts:158` y `src/schema/recipe.ts:164`: `provider` y `outputs` existen en el esquema pero el motor no los usa.
-5. `src/cli/index.ts:28`: `--timeout` es por etapa, no total del run.
-6. En `--dry-run`/`--print-request` no se evalúa `when` y se siembran respuestas neutras (`src/core/engine.ts:137-179`), por lo que el request impreso puede no coincidir con el de una corrida real.
+1. `src/schema/recipe.ts:164`: `outputs` existe en el esquema pero los renderers no lo usan; la salida siempre incluye todos los campos.
+2. En `--dry-run`/`--print-request` no se evalúa `when` y se siembran respuestas neutras (`src/core/engine.ts:137-179`), por lo que el request impreso puede no coincidir con el de una corrida real.

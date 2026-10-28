@@ -244,8 +244,6 @@ Flujo: `registry.createProvider(alias, cfg)` elige la factory; `evaluate()` hace
 ## Discrepancias detectadas
 
 1. `src/providers/cloudflare.ts:31-34` resuelve la key solo desde `cfg.apiKey` o la variable de entorno; **no** lee `credentials.json`. Ese merge lo hace la CLI en `src/cli/commands/run.ts:82-87`. Un consumidor de la librería que llame `createProvider` directamente debe pasar `apiKey`/`accountId` en la config.
-2. `src/config/credentials.ts:61` usa `CLOUDFLARE_ACCOUNT_ID` como fallback de `accountId` para cualquier `kind`, no solo Cloudflare.
-3. `.env.example:1-6` no documenta `LOCAL_API_KEY` ni `SYSTEMONE_API_KEY`, aunque `m1.config.example.json:19` y `src/providers/systemone.ts:44` las usan.
-4. `src/providers/typesafe.ts:35-40` rechaza imágenes aunque el contrato común las contemple; la diferencia es del proveedor, no del motor.
-5. `src/schema/recipe.ts:158` permite declarar `provider` en la receta, pero el request siempre sale del provider resuelto por config/CLI (`src/cli/commands/run.ts:71`).
-6. Los costos y el contexto de Clef-flash no están en el código; se documentan desde la ficha del proveedor y no se validan en runtime.
+2. `.env.example` declara `LOCAL_API_KEY`, pero `src/providers/systemone.ts:44` usa `SYSTEMONE_API_KEY` por defecto si el provider no define `apiKeyEnv`.
+3. `src/providers/typesafe.ts:35-40` rechaza imágenes aunque el contrato común las contemple; la diferencia es del proveedor, no del motor.
+4. Los costos y el contexto de Clef-flash no están en el código; se documentan desde la ficha del proveedor y no se validan en runtime.

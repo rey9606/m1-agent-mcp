@@ -43,7 +43,7 @@ export async function recipeValidateCommand(path: string, flags: { json?: boolea
   }
 }
 
-export function recipeSchemaCommand(flags: { json?: boolean }): never {
+export function recipeSchemaCommand(_flags: { json?: boolean }): never {
   const schema = zodToJsonSchema(recipeSchema, { name: 'Recipe', target: 'jsonSchema7' });
   process.stdout.write(JSON.stringify(schema, null, 2) + '\n');
   process.exit(0);

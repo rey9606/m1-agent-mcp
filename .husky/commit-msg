@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+# Valida Conventional Commits sobre el mensaje staged.
+node scripts/check-commit-msg.mjs "$1"

@@ -1,7 +1,12 @@
 #!/usr/bin/env sh
-# Pre-commit: guardas de seguridad + tests relacionados con el diff + typecheck.
+# Pre-commit: guardas de seguridad + lint-staged (eslint/secretlint/vitest related) + typecheck condicional.
 set -e
 
 node scripts/precommit-guards.mjs
-pnpm exec lint-staged
-pnpm run typecheck
+if [ -f node_modules/.bin/lint-staged ]; then
+  # Husky corre con sh: el shim de .bin evita el arranque extra de `pnpm exec`.
+  node_modules/.bin/lint-staged
+else
+  pnpm exec lint-staged
+fi
+node scripts/precommit-typecheck.mjs

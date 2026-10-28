@@ -217,6 +217,102 @@ describe('precommit-guards: permite archivos normales', () => {
 });
 
 // ---------------------------------------------------------------------------
+// precommit-guards.mjs: higiene (conflictos, JSON, lockfiles)
+// ---------------------------------------------------------------------------
+
+describe('precommit-guards: higiene del índice', () => {
+  it('sale 1 con marcadores de conflicto sin resolver', () => {
+    const repo = makeRepo();
+    stage(
+      repo,
+      'src/conflict.ts',
+      [
+        'export const value = 1;',
+        '<<<<<<< HEAD',
+        'const answer = 1;',
+        '=======',
+        'const answer = 2;',
+        '>>>>>>> feature',
+        '',
+      ].join('\n'),
+    );
+
+    const result = runGuards(repo.dir);
+
+    expect(result.status, result.stderr).toBe(1);
+    expect(result.stderr).toContain('src/conflict.ts');
+    expect(result.stderr).toContain('marcadores de conflicto');
+  });
+
+  it('detecta conflictos desde el índice aunque el working tree esté resuelto', () => {
+    const repo = makeRepo();
+    stage(
+      repo,
+      'notes.md',
+      ['<<<<<<< HEAD', 'a', '=======', 'b', '>>>>>>> rama', ''].join('\n'),
+    );
+    write(repo, 'notes.md', '# resuelto\n');
+
+    const result = runGuards(repo.dir);
+
+    expect(result.status, result.stderr).toBe(1);
+    expect(result.stderr).toContain('marcadores de conflicto');
+  });
+
+  it('sale 1 con un marcador de inicio aislado', () => {
+    const repo = makeRepo();
+    stage(repo, 'src/conflict.ts', '<<<<<<< HEAD\nexport const value = 1;\n');
+
+    const result = runGuards(repo.dir);
+
+    expect(result.status, result.stderr).toBe(1);
+    expect(result.stderr).toContain('marcadores de conflicto');
+  });
+
+  it('no marca un separador `=======` suelto (heading Setext)', () => {
+    const repo = makeRepo();
+    stage(repo, 'docs/heading.md', 'Título\n=======\n\nSin conflicto.\n');
+
+    const result = runGuards(repo.dir);
+
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it('sale 1 con JSON inválido', () => {
+    const repo = makeRepo();
+    stage(repo, 'config/broken.json', '{ "name": "tmp", ');
+
+    const result = runGuards(repo.dir);
+
+    expect(result.status, result.stderr).toBe(1);
+    expect(result.stderr).toContain('config/broken.json');
+    expect(result.stderr).toContain('JSON inválido');
+  });
+
+  it('detecta JSON inválido desde el índice aunque el working tree esté corregido', () => {
+    const repo = makeRepo();
+    stage(repo, 'config/broken.json', '{ "name": ');
+    write(repo, 'config/broken.json', '{"name":"ok"}\n');
+
+    const result = runGuards(repo.dir);
+
+    expect(result.status, result.stderr).toBe(1);
+    expect(result.stderr).toContain('JSON inválido');
+  });
+
+  it.each(['package-lock.json', 'yarn.lock'])('sale 1 al stagear %s', (relPath) => {
+    const repo = makeRepo();
+    stage(repo, relPath, '{}\n');
+
+    const result = runGuards(repo.dir);
+
+    expect(result.status, result.stderr).toBe(1);
+    expect(result.stderr).toContain(relPath);
+    expect(result.stderr).toContain('pnpm');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // validate-recipes.mjs
 // ---------------------------------------------------------------------------
 

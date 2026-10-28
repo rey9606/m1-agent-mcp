@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+# Pre-push: audit si cambió el lockfile + suite completa.
+node scripts/prepush.mjs

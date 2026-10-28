@@ -17,14 +17,19 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:changed": "vitest related --run --passWithNoTests",
+    "test:changed": "vitest run --changed",
     "test:integration": "vitest run tests/integration",
     "test:live": "node scripts/run-live-tests.mjs",
+    "lint": "eslint .",
     "precommit": "node scripts/precommit-guards.mjs",
     "prepare": "husky"
   },
   "lint-staged": {
-    "*.{ts,mts,cts}": "vitest related --run --passWithNoTests",
+    "*.{ts,mts,cts}": [
+      "eslint --fix",
+      "vitest related --run --passWithNoTests"
+    ],
+    "*.{ts,mts,cts,js,mjs,cjs,json,md,yml,yaml,sh,txt,example}": "secretlint",
     "examples/*.json": "node scripts/validate-recipes.mjs"
   },
   "dependencies": {
@@ -38,12 +43,18 @@
     ]
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@secretlint/secretlint-rule-preset-recommend": "^13.1.0",
     "@types/node": "^22.10.5",
+    "eslint": "^10.13.0",
+    "globals": "^17.13.0",
     "husky": "^9.1.7",
     "lint-staged": "^17.6.0",
+    "secretlint": "^13.1.0",
     "tsup": "^8.3.5",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
+    "typescript-eslint": "^8.72.1",
     "vitest": "^2.1.8"
   }
 }

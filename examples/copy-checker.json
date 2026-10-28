@@ -1,0 +1,136 @@
+{
+  "schema": "m1agent/recipe@1",
+  "id": "copy-checker",
+  "role": "Editor de copy",
+  "description": "Evalúa textos de producto/marketing: claridad, tono, CTA, corrección y especificidad.",
+  "whenToUse": "Cuando terminaste un texto (landing, email, UI copy) y querés un chequeo editorial antes de publicar.",
+  "input": {
+    "slots": {
+      "copy": { "type": "text", "required": true, "description": "El texto a evaluar, tal como se va a publicar." },
+      "brief": { "type": "text", "required": false, "description": "Audiencia, propuesta de valor y tono de marca esperado." }
+    },
+    "state": {
+      "brief": "{{brief}}",
+      "copy": "{{copy}}",
+      "tarea": "Evaluá el copy como editor. Juzgá sólo lo que está escrito; no inventes contexto."
+    },
+    "images": []
+  },
+  "criteria": [
+    {
+      "id": "CP-1",
+      "name": "Claridad",
+      "type": "score",
+      "instructions": "¿Qué tan claro es el mensaje para la audiencia declarada?",
+      "criteria": [
+        "Confuso: no se entiende la propuesta",
+        "Mejorable: requiere releer",
+        "Claro: se entiende en una lectura",
+        "Cristalino: directo y sin ambigüedad"
+      ],
+      "polarity": "positive",
+      "passAt": 0.66,
+      "weight": 0.3,
+      "severity": "major",
+      "remediation": "Una idea por oración; sacá jerga y abstracciones. Poné el beneficio antes que la característica."
+    },
+    {
+      "id": "CP-2",
+      "name": "Tono de marca",
+      "type": "choice",
+      "instructions": "¿Cómo suena el tono respecto del esperado para el brief?",
+      "criteria": {
+        "on_brand": "Alineado con el tono esperado.",
+        "neutro": "Correcto pero sin personalidad.",
+        "off_brand": "Choca con el tono esperado.",
+        "inconsistente": "Cambia de tono dentro del mismo texto."
+      },
+      "mapping": { "on_brand": 1, "neutro": 0.6, "off_brand": 0.15, "inconsistente": 0.2 },
+      "polarity": "positive",
+      "passAt": 0.6,
+      "weight": 0.15,
+      "severity": "major",
+      "remediation": "Elegí 2-3 rasgos de tono (ej: directo, cálido, técnico) y reescribí las frases que se salen de ahí."
+    },
+    {
+      "id": "CP-3",
+      "name": "Llamado a la acción",
+      "type": "noul",
+      "instructions": "El texto tiene una acción siguiente única, concreta y fácil de ejecutar.",
+      "polarity": "positive",
+      "passAt": 0.7,
+      "weight": 0.2,
+      "severity": "blocker",
+      "remediation": "Dejá un solo CTA, en verbo activo y con el resultado esperado (\"Empezá tu prueba\", no \"Enviar\")."
+    },
+    {
+      "id": "CP-4",
+      "name": "Corrección",
+      "type": "noul",
+      "instructions": "El texto está libre de errores ortográficos, gramaticales y de puntuación.",
+      "polarity": "positive",
+      "passAt": 0.8,
+      "weight": 0.2,
+      "severity": "major",
+      "remediation": "Pasá corrector y leé en voz alta; unificá comillas, guiones y mayúsculas."
+    },
+    {
+      "id": "CP-5",
+      "name": "Especificidad",
+      "type": "score",
+      "instructions": "¿El texto usa datos, ejemplos o beneficios concretos en lugar de promesas vagas?",
+      "criteria": ["Vago", "Algo concreto", "Concreto con evidencia"],
+      "polarity": "positive",
+      "passAt": 0.5,
+      "weight": 0.15,
+      "severity": "minor",
+      "remediation": "Reemplazá \"rápido/fácil/mejor\" por una cifra, un ejemplo o una comparación verificable."
+    },
+    {
+      "id": "CP-6",
+      "name": "Desvío de tono",
+      "type": "choice",
+      "instructions": "Con el texto y el tono detectado, ¿cuál es el desvío dominante?",
+      "criteria": {
+        "demasiado_formal": "Sobrio o corporativo de más.",
+        "demasiado_informal": "Coloquial de más para la audiencia.",
+        "vendedor": "Suena a venta agresiva.",
+        "generico": "Suena a plantilla, sin voz propia."
+      },
+      "mapping": { "demasiado_formal": 0.3, "demasiado_informal": 0.3, "vendedor": 0.2, "generico": 0.2 },
+      "polarity": "positive",
+      "passAt": 0.3,
+      "weight": 0,
+      "severity": "info",
+      "remediation": "Reescribí el pasaje más desviado usando el registro de marca como referencia."
+    }
+  ],
+  "stages": [
+    { "id": "base", "questions": ["CP-1", "CP-2", "CP-3", "CP-4", "CP-5"] },
+    {
+      "id": "diagnostico",
+      "when": "CP-2 < 0.6",
+      "questions": ["CP-6"],
+      "state": {
+        "brief": "{{brief}}",
+        "copy": "{{copy}}",
+        "tarea": "Diagnosticá el desvío de tono dominante del texto.",
+        "hallazgos": { "tono": "{{answers.CP-2.choice}}", "claridad": "{{answers.CP-1.normalized}}" }
+      }
+    }
+  ],
+  "derived": [
+    {
+      "id": "quality",
+      "expr": "CP-1*0.3 + CP-2*0.15 + CP-3*0.2 + CP-4*0.2 + CP-5*0.15",
+      "description": "Calidad editorial global ponderada (0..1)."
+    }
+  ],
+  "acceptance": [
+    { "id": "A1", "expr": "CP-3 >= 0.7", "severity": "blocker" },
+    { "id": "A2", "expr": "CP-4 >= 0.8", "severity": "major" },
+    { "id": "A3", "expr": "quality >= 0.7", "severity": "major" }
+  ],
+  "outputs": ["verdict", "score", "criteria", "issues"],
+  "limits": { "maxStages": 8, "timeoutMs": 60000, "minConfidence": 0.6 }
+}

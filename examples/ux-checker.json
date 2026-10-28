@@ -1,0 +1,127 @@
+{
+  "schema": "m1agent/recipe@1",
+  "id": "ux-checker",
+  "role": "Experto en UX",
+  "description": "Revisa pantallas renderizadas: jerarquía, contraste, consistencia y claridad de la acción principal.",
+  "whenToUse": "Cuando ya existe una pantalla renderizada (screenshot) y querés un chequeo de UX antes de entregar.",
+  "input": {
+    "slots": {
+      "brief": { "type": "text", "required": false, "description": "Contexto: producto, audiencia, objetivo de la pantalla." },
+      "screens": { "type": "image[]", "required": true, "max": 4, "description": "Screenshots renderizados (mobile y desktop)." }
+    },
+    "state": {
+      "brief": "{{brief}}",
+      "tarea": "Evaluá las pantallas adjuntas como un experto en UX. Cada criterio se refiere a lo que se ve en las imágenes."
+    },
+    "images": ["screens"]
+  },
+  "criteria": [
+    {
+      "id": "UX-1",
+      "name": "Jerarquía visual",
+      "type": "score",
+      "instructions": "¿La pantalla tiene una jerarquía visual clara, con la acción principal dominando?",
+      "criteria": [
+        "Rota: no se distingue qué hacer",
+        "Débil: el CTA compite con otros elementos",
+        "Correcta: el foco es evidente",
+        "Excelente: foco inmediato y recorrido guiado"
+      ],
+      "polarity": "positive",
+      "passAt": 0.66,
+      "weight": 0.3,
+      "severity": "major",
+      "remediation": "Reforzá la acción principal: más tamaño/contraste y aire alrededor; bajá el peso de los elementos secundarios."
+    },
+    {
+      "id": "UX-2",
+      "name": "Contraste AA",
+      "type": "noul",
+      "instructions": "Los textos principales de la pantalla cumplen contraste mínimo AA (4.5:1) sobre su fondo.",
+      "criteria": {
+        "true": "Se lee sin esfuerzo.",
+        "false": "Hay textos con contraste insuficiente."
+      },
+      "polarity": "positive",
+      "passAt": 0.7,
+      "weight": 0.35,
+      "severity": "blocker",
+      "remediation": "Subí el contraste de textos principales a ≥ 4.5:1. Revisá placeholders, labels y texto sobre imágenes."
+    },
+    {
+      "id": "UX-3",
+      "name": "Consistencia del sistema",
+      "type": "choice",
+      "instructions": "¿Cuál describe mejor la consistencia visual (espaciado, tipografía, colores, componentes)?",
+      "criteria": {
+        "consistente": "Sistema claro y repetible.",
+        "parcial": "Algunas desviaciones visibles de espaciado o tipografía.",
+        "inconsistente": "Mezcla de estilos y medidas."
+      },
+      "mapping": { "consistente": 1, "parcial": 0.55, "inconsistente": 0.15 },
+      "polarity": "positive",
+      "passAt": 0.5,
+      "weight": 0.2,
+      "severity": "major",
+      "remediation": "Unificá espaciado, escala tipográfica y estilos de componentes; usá tokens del design system."
+    },
+    {
+      "id": "UX-4",
+      "name": "Claridad de la acción",
+      "type": "noul",
+      "instructions": "Un usuario nuevo entiende qué tiene que hacer en los primeros 5 segundos.",
+      "polarity": "positive",
+      "passAt": 0.7,
+      "weight": 0.15,
+      "severity": "major",
+      "remediation": "Acortá el copy del CTA y eliminá decisiones secundarias del primer plano."
+    },
+    {
+      "id": "UX-5",
+      "name": "Naturaleza del defecto",
+      "type": "choice",
+      "instructions": "Con las pantallas y los puntajes previos, ¿cuál es el defecto dominante?",
+      "criteria": {
+        "contraste": "Problema de legibilidad/contraste.",
+        "foco": "Falta de foco en la acción principal.",
+        "densidad": "Exceso de elementos o información.",
+        "copy": "El texto no explica qué hacer."
+      },
+      "mapping": { "contraste": 0.2, "foco": 0.3, "densidad": 0.3, "copy": 0.4 },
+      "polarity": "positive",
+      "passAt": 0.3,
+      "weight": 0,
+      "severity": "info",
+      "remediation": "Atacá primero el defecto dominante antes de retoques estéticos."
+    }
+  ],
+  "stages": [
+    { "id": "base", "questions": ["UX-1", "UX-2", "UX-3", "UX-4"] },
+    {
+      "id": "diagnostico",
+      "when": "UX-1 < 0.5 || UX-2 < 0.7",
+      "questions": ["UX-5"],
+      "state": {
+        "brief": "{{brief}}",
+        "tarea": "Profundizá el diagnóstico del defecto principal de la pantalla.",
+        "hallazgos": {
+          "jerarquia": "{{answers.UX-1.normalized}}",
+          "contraste": "{{answers.UX-2.normalized}}"
+        }
+      }
+    }
+  ],
+  "derived": [
+    {
+      "id": "quality",
+      "expr": "UX-1*0.3 + UX-2*0.35 + UX-3*0.2 + UX-4*0.15",
+      "description": "Calidad UX global ponderada (0..1)."
+    }
+  ],
+  "acceptance": [
+    { "id": "A1", "expr": "UX-2 >= 0.7", "severity": "blocker" },
+    { "id": "A2", "expr": "quality >= 0.72", "severity": "major" }
+  ],
+  "outputs": ["verdict", "score", "criteria", "issues"],
+  "limits": { "maxStages": 8, "timeoutMs": 60000, "minConfidence": 0.6 }
+}

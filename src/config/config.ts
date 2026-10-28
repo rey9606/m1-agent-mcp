@@ -230,7 +230,9 @@ export function resolveProvider(
   const found = config.providers[name];
   if (!found) {
     throw new M1Error('E_CONFIG', `provider "${name}" no está configurado`, {
-      hint: `disponibles: ${Object.keys(config.providers).join(', ')}`,
+      hint:
+        `disponibles: ${Object.keys(config.providers).join(', ')}. ` +
+        'Revisá -c/--config o ejecutá `m1 doctor`',
     });
   }
   const merged: ProviderConfig = { ...found };

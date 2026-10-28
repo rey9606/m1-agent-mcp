@@ -1,18 +1,65 @@
 #!/usr/bin/env node
-import { Command } from 'commander';
+import { Command, CommanderError } from 'commander';
 import { runCommand } from './commands/run';
 import { recipeSchemaCommand, recipeValidateCommand } from './commands/recipe';
 import { authRemoveCommand, authSetCommand, authStatusCommand } from './commands/auth';
 import { doctorCommand } from './commands/doctor';
 import { modelResetCommand, modelShowCommand, modelUseCommand, modelsCommand } from './commands/models';
 import { localStartCommand, localStatusCommand, localStopCommand } from './commands/local';
+import { guideCommand } from './commands/guide';
+import { fail } from './output';
+import { CLI_VERSION } from './version';
+import { M1Error } from '../core/errors';
+
+/** Salida de commander: se captura para reformatearla como E_USAGE (o JSON). */
+let commanderStderr = '';
+
+const ROOT_HELP = `
+Ejemplos:
+  $ m1 guide                                   tutorial completo para agentes
+  $ m1 doctor                                  verifica entorno, config y providers
+  $ m1 run examples/copy-checker.json --state "texto a evaluar"
+  $ m1 run examples/ux-checker.json --image pantalla.png --timeout 300000 --json
+  $ m1 local start --provider liquid           levanta el modelo local si no responde
+
+Contrato para agentes:
+  · Todos los comandos aceptan --json (un único objeto JSON en stdout).
+  · Los errores van a stderr como { ok:false, error:{ code, message, hint, details }, docs }.
+  · Exit codes: 0 pass · 1 fail · 2 error · 3 needs_review.
+  · Ayuda puntual: m1 <comando> --help · Guía en JSON: m1 guide --json`;
+
+const COMMAND_FOOTER = `
+Más ayuda:
+  m1 guide                     tutorial completo para agentes (o --json)
+  m1 <comando> --help          opciones y argumentos del comando
+  Exit codes: 0 pass · 1 fail · 2 error · 3 needs_review`;
 
 const program = new Command();
+
+// Captura la salida de error de commander; la formateamos nosotros (E_USAGE/JSON).
+program.configureOutput({
+  writeErr: (str) => {
+    commanderStderr += str;
+  },
+});
+
+// Debe configurarse antes de crear subcomandos: commander copia el callback al crearlos.
+program.exitOverride();
 
 program
   .name('m1')
   .description('Agentes de decisión (Clef/JEV) definidos por recetas JSON')
-  .version('0.1.0', '-v, --version', 'muestra la versión');
+  .version(CLI_VERSION, '-v, --version', 'muestra la versión')
+  .showSuggestionAfterError(true)
+  .addHelpText('after', ROOT_HELP);
+
+program
+  .command('guide')
+  .description('tutorial para agentes: comandos, salida JSON, exit codes y recuperación de errores')
+  .option('--json', 'guía estructurada en JSON')
+  .action((flags) => {
+    guideCommand(flags);
+  });
 
 program
   .command('run')
@@ -117,7 +164,9 @@ local
     localStopCommand(flags);
   });
 
-const recipe = program.command('recipe').description('herramientas de recetas');recipe
+const recipe = program.command('recipe').description('herramientas de recetas');
+
+recipe
   .command('validate')
   .description('valida una receta sin ejecutarla')
   .argument('<file>', 'ruta al JSON de la receta')
@@ -176,7 +225,41 @@ program
     await doctorCommand(flags);
   });
 
-program.parseAsync(process.argv).catch((e) => {
-  process.stderr.write(`\n  ✗ ${(e as Error).message}\n\n`);
-  process.exit(2);
+/** Agrega el pie de ayuda (guía + exit codes) a todos los subcomandos. */
+function addHelpFooter(command: Command): void {
+  command.addHelpText('after', COMMAND_FOOTER);
+  for (const sub of command.commands) addHelpFooter(sub);
+}
+
+for (const command of program.commands) addHelpFooter(command);
+
+// `m1` sin argumentos: ayuda completa y exit 0 (no es un error de uso).
+if (process.argv.length <= 2) {
+  program.outputHelp();
+  process.exit(0);
+}
+
+function jsonRequested(): boolean {
+  return process.argv.includes('--json');
+}
+
+program.parseAsync(process.argv).catch((e: unknown) => {
+  if (e instanceof CommanderError) {
+    // `--help` y `--version` ya escribieron su salida: no son errores.
+    if (e.exitCode === 0) process.exit(0);
+    const lines = commanderStderr
+      .trim()
+      .split(/\r?\n/u)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((line) => line.replace(/^error:\s*/u, ''));
+    const message = lines.join(' ').trim() || e.message;
+    fail(
+      new M1Error('E_USAGE', message, {
+        hint: 'comando o flag inválido: revisá `m1 guide` o `m1 <comando> --help`',
+      }),
+      jsonRequested(),
+    );
+  }
+  fail(e, jsonRequested());
 });

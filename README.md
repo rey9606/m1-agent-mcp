@@ -86,8 +86,10 @@ pnpm m1 run examples/copy-checker.json --state "texto" --print-request
 | `m1 model use <id>` | Fija el modelo del provider | `--provider <alias>`, `--project`, `--json`, `-c, --config <file>` |
 | `m1 model reset` | Borra la preferencia de modelo del usuario | `--provider <alias>`, `--json`, `-c, --config <file>` |
 | `m1 local status` | Muestra si el servidor local está corriendo (no lo arranca) | `--provider <alias>`, `--json`, `-c, --config <file>` |
+| `m1 local start` | Verifica y, si no responde, levanta el servidor local (idempotente) | `--provider <alias>`, `--json`, `-c, --config <file>` |
 | `m1 local stop` | Detiene el servidor local registrado | `--provider <alias>`, `--json`, `-c, --config <file>` |
 | `m1 doctor` | Diagnóstico de Node, config, `.env` y providers (incluye el servidor local) | `--json`, `-c, --config <file>` |
+| `m1 guide` | Tutorial para agentes: comandos, salida, exit codes y recuperación de errores | `--json` |
 
 Precedencia del modelo efectivo: `--model` (CLI) > preferencia de usuario (`~/.config/m1-agent/preferences.json`) > `provider.model` de la config > default del kind. `m1 model use` guarda en preferencias del usuario; `--project` escribe `providers.<alias>.model` en `m1.config.json`.
 
@@ -108,6 +110,31 @@ Notas de comportamiento:
 | `3` | `needs_review` | Veredicto `needs_review` (criterio `blocker` con baja confianza) |
 
 `doctor` usa 0/2. `recipe validate` usa 0/2. Cualquier error de la CLI (`fail()`) termina en 2.
+
+## Para agentes de IA
+
+La CLI está pensada para que la use un agente sin adivinar:
+
+```bash
+m1 guide            # tutorial completo en texto
+m1 guide --json     # mismo contenido, estructurado
+m1 <comando> --help # opciones y argumentos exactos
+```
+
+Contrato:
+
+- Todo error sale por **stderr** como
+  `{ ok:false, error:{ code, message, hint, details }, docs:{ guide, help, doctor, exitCodes } }`
+  cuando se usa `--json`.
+- Los errores de uso (`E_USAGE`) sugieren el flag o comando correcto
+  (`Did you mean --json?`).
+- Ramificá por exit code (`0/1/2/3`), no por el texto.
+- Si el verdict es `fail`, aplicá `issues[].remediation` y volvé a correr.
+- Para inspeccionar sin gastar llamadas: `--print-request` o `--dry-run`.
+- Con modelo local, la primera vez puede tardar en cargar: `--timeout 300000`.
+
+El contrato completo está en [AGENTS.md](AGENTS.md) y el manual extendido en
+[docs/for-agents.md](docs/for-agents.md).
 
 ## Cómo funciona
 
@@ -276,7 +303,8 @@ El pre-commit corre guardas de seguridad (leyendo el índice git), `secretlint`,
 ## Documentación
 
 - [docs/recipe-spec.md](docs/recipe-spec.md) — referencia de la receta v1, expresiones, plantillas y veredicto.
-- [docs/for-agents.md](docs/for-agents.md) — manual para que otro agente use la CLI sin equivocarse.
+- [AGENTS.md](AGENTS.md) — contrato operativo para agentes: reglas, salida JSON, exit codes y recuperación de errores.
+- [docs/for-agents.md](docs/for-agents.md) — manual extendido para que otro agente use la CLI sin equivocarse.
 - [docs/api-contract.md](docs/api-contract.md) — contrato de Clef/JEV y límites/costos.
 - [docs/testing.md](docs/testing.md) — pirámide de tests, comandos, tests live y flujo pre-commit.
 

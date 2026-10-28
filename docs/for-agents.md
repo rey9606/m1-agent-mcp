@@ -2,6 +2,27 @@
 
 Este documento está pensado para que otro agente o LLM invoque la CLI de forma segura. Asume que el repositorio ya está instalado (`pnpm install`) y que existe `m1.config.json`.
 
+## Descubrimiento (antes de improvisar)
+
+La CLI trae su propio tutorial y ayuda; no hace falta leer el código:
+
+```bash
+m1 guide                 # tutorial completo para agentes
+m1 guide --json          # mismas secciones, estructuradas
+m1 --help                # comandos y contrato
+m1 <comando> --help      # opciones/argumentos del comando
+m1 recipe schema         # JSON Schema de recetas
+m1 --version
+```
+
+Si `m1` no está en el PATH, instalalo globalmente desde el repo:
+
+```bash
+pnpm build
+npm link
+m1 --version
+```
+
 ## Regla de oro
 
 Nunca ejecutes `run` a ciegas. El orden es siempre:
@@ -149,11 +170,44 @@ En errores con `--json`, el JSON va a **stderr** y el stdout queda vacío:
     "message": "falta el slot obligatorio \"copy\"",
     "hint": "tipo esperado: text; ejemplo: {\"copy\": \"texto\"}",
     "details": { "path": "input.copy", "expected": "text" }
+  },
+  "docs": {
+    "guide": "m1 guide --json",
+    "help": "m1 <comando> --help",
+    "doctor": "m1 doctor --json",
+    "exitCodes": "0 pass · 1 fail · 2 error · 3 needs_review"
   }
 }
 ```
 
 Códigos: `E_USAGE`, `E_VALIDATION`, `E_INPUT`, `E_CONFIG`, `E_PROVIDER`, `E_TIMEOUT`, `E_EXPR`, `E_INTERNAL`.
+
+Los errores de uso (`E_USAGE`) incluyen la sugerencia de tipeo en `message`
+(`unknown option '--jsn' (Did you mean --json?)`) y un `hint` que apunta a
+`m1 guide` / `m1 <comando> --help`. En modo humano, la CLI imprime además una
+línea `más: m1 guide · m1 <comando> --help`.
+
+## Modelo local (systemone + launch)
+
+Con un provider `kind: "systemone"` que tenga `launch`, `m1` administra el
+servidor:
+
+```bash
+m1 local status --provider liquid   # exit 0 running / 2 down
+m1 local start  --provider liquid   # verifica y, si no responde, lo levanta
+m1 local stop   --provider liquid   # lo apaga
+```
+
+- Al correr `run`, `m1` sondea `/health`; si no responde, lo levanta solo
+  (`autoStart` default `always`).
+- El servidor **queda corriendo** entre runs (el modelo ya está cargado). Lo
+  apaga el usuario con `local stop` o cerrando su consola.
+- Si el default de la config no es local y hay un único provider local, los
+  comandos `local` lo usan y avisan por stderr.
+- En Windows se abre una consola propia (minimizada); el log queda en
+  `~/.cache/m1-agent/local/logs/<alias>.log`.
+- Si usás un provider cloud por error, el hint lista los aliases locales y el
+  comando exacto.
 
 ## Errores comunes y su fix
 
@@ -186,7 +240,21 @@ Códigos: `E_USAGE`, `E_VALIDATION`, `E_INPUT`, `E_CONFIG`, `E_PROVIDER`, `E_TIM
 
 ## Comandos copy-paste
 
+> En el repo se usa `pnpm m1`; si instalaste globalmente (`npm link`), usá `m1`.
+
 ```bash
+# Descubrimiento
+m1 guide
+m1 guide --json
+m1 --version
+m1 --help
+m1 run --help
+
+# Servidor local
+m1 local status --provider liquid
+m1 local start  --provider liquid
+m1 local stop   --provider liquid
+
 # Ver la versión y la ayuda
 pnpm m1 --version
 pnpm m1 --help

@@ -81,6 +81,12 @@ export async function runCommand(recipePath: string, flags: RunFlags): Promise<n
     }
 
     const config = loadConfig({ explicit: flags.config });
+    if (!json && config.source === '(builtin)') {
+      process.stderr.write(
+        '  ! no encontré m1.config.json (ni en el cwd ni en ~/.config/m1-agent/config.json): uso el provider mock de emergencia\n' +
+          '    creá m1.config.json o pasá -c/--config; ver `m1 guide`\n',
+      );
+    }
     const preferenceWarnings: string[] = [];
     const preferences = loadPreferences(preferenceWarnings);
     if (!json) {

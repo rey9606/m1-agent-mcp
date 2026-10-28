@@ -343,11 +343,13 @@ El pre-commit corre guardas de seguridad (leyendo el índice git), `secretlint`,
 El paquete se publica solo desde GitHub Actions con **Trusted Publishing** (OIDC): no hay tokens guardados en el repo ni en secrets.
 
 ```bash
-npm version patch            # o minor / major: crea commit + tag vX.Y.Z
-git push --follow-tags
+pnpm release patch        # o minor / major / 0.2.3: sube package.json, commitea y crea el tag anotado
+git push origin main --follow-tags
 ```
 
-El workflow [`.github/workflows/publish.yml`](https://github.com/rey9606/m1-agent-mcp/blob/main/.github/workflows/publish.yml) verifica que el tag coincida con `package.json`, corta si esa versión ya existe, corre tests + typecheck + build y publica con procedencia. Configuración inicial (una sola vez): npmjs.com → **m1-agent** → *Settings* → *Trusted publishing* → GitHub Actions (`rey9606` / `m1-agent-mcp` / `publish.yml`), habilitando **npm publish** además del stage por defecto. El primer publish debe ocurrir dentro de 2 días o la configuración expira.
+`pnpm release` verifica que estés en `main`, con el árbol limpio, que el tag no exista y que esa versión no esté ya publicada en npm. Usa tag **anotado** a propósito: `git push --follow-tags` no empuja tags livianos.
+
+El workflow [`.github/workflows/publish.yml`](https://github.com/rey9606/m1-agent-mcp/blob/main/.github/workflows/publish.yml) verifica que el tag coincida con `package.json`, corta si la versión ya existe, corre tests + typecheck + build y publica con procedencia. Configuración inicial (una sola vez): npmjs.com → **m1-agent** → *Settings* → *Trusted publishing* → GitHub Actions (`rey9606` / `m1-agent-mcp` / `publish.yml`), habilitando **npm publish** además del stage por defecto.
 
 Publicación manual (fallback): `npm publish --access public` con un token granular que tenga *Bypass 2FA*.
 

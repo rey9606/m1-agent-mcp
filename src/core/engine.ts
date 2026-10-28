@@ -4,7 +4,7 @@ import type { DecisionProvider, DecisionRequest, DecisionResponse, ImageInput, Q
 import type { Criterion, Recipe, ResolvedRecipe } from '../schema/recipe';
 import type { CriterionResult, RunResult, StageTrace } from '../schema/result';
 import { resolveInput } from '../intake/input';
-import { assertImageBudget, type LoadedImage } from '../intake/images';
+import { assertBodyBudget, assertImageBudget, type LoadedImage } from '../intake/images';
 import { buildIssues, decideVerdict, evaluateAcceptance, weightedScore } from './aggregate';
 import { M1Error, isM1Error } from './errors';
 import { evaluateExpression, type ExprScope } from './expr';

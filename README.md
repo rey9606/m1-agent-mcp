@@ -1,83 +1,118 @@
 # m1-agent
 
-CLI y motor de flujo para **agentes de decisión** definidos en JSON. No es un LLM: interpreta una receta, arma las preguntas y delega el juicio a Clef (Cloudflare) o JEV (TypeSafe) para obtener respuestas tipadas. La decisión final (normalización, score, issues, veredicto) es determinista y la calcula el motor, no el modelo.
+CLI y motor de flujo para **agentes de decisión** definidos en JSON. No es un LLM: interpreta un workflow, arma las preguntas y delega el juicio a Clef (Cloudflare), JEV (TypeSafe), OpenRouter o un endpoint compatible (incluido llama.cpp local). La decisión final (normalización, score, issues, veredicto) es determinista y la calcula el motor, no el modelo.
+
+## Uso rápido con npx
+
+Sin instalar nada:
+
+```bash
+npx --yes m1-agent@latest workflow list
+npx --yes m1-agent@latest run copy-checker --state "Empezá tu prueba gratis. Sin tarjeta." --json
+```
+
+El paquete expone dos binarios equivalentes: `m1-agent` y `m1`. Si preferís el nombre corto:
+
+```bash
+npx --yes -p m1-agent m1 workflow list
+```
 
 ## Requisitos
 
 - Node >= 22 (el proyecto se desarrolla con Node 24).
-- pnpm.
-- Credenciales de al menos un proveedor (o usar `mock`).
+- Un provider configurado (o el `mock` de emergencia).
 
 ## Instalación
 
+Global, con npm:
+
+```bash
+npm install -g m1-agent
+m1 workflow list
+```
+
+O desde el repo:
+
 ```bash
 pnpm install
+pnpm build
+npm link        # deja `m1` en el PATH
 ```
 
-Crear el archivo de entorno y completar las credenciales de los proveedores que vayas a usar:
+## Configurar un provider
+
+Los providers se guardan en la config **global** (`~/.config/m1-agent/config.json`); las API keys van a `~/.config/m1-agent/credentials.json` (nunca al JSON de config).
 
 ```bash
-cp .env.example .env          # PowerShell: Copy-Item .env.example .env
+m1 provider presets
+m1 provider add cf --preset cloudflare --api-key <token> --account-id <id> --default
+m1 provider add or --preset openrouter --api-key <sk-or-...>
+m1 provider list
 ```
 
-```dotenv
-CLOUDFLARE_ACCOUNT_ID=<account-id>
-CLOUDFLARE_API_TOKEN=<api-token>
-OPENROUTER_KEY=<sk-or-...>    # opcional, provider "or"
-```
-
-Crear la configuración local a partir del ejemplo:
+También podés apuntar a cualquier endpoint compatible con URL y API key opcional:
 
 ```bash
-cp m1.config.example.json m1.config.json    # PowerShell: Copy-Item m1.config.example.json m1.config.json
+m1 provider add mio --preset custom --base-url http://127.0.0.1:8080/v1/systemone
 ```
 
-Verificar el entorno:
-
-```bash
-pnpm m1 doctor
-```
-
-Alternativa para guardar credenciales sin `.env`:
-
-```bash
-pnpm m1 auth set cf --token <api-token> --account-id <account-id>
-```
-
-Se guardan en `~/.config/m1-agent/credentials.json` (modo 0600 best-effort). Alternativa sin guardar el secreto: `pnpm m1 auth set cf --env CLOUDFLARE_API_TOKEN` persiste sólo el nombre de la variable en `credentials.json`; el valor se lee del entorno en cada corrida.
+Variables de entorno equivalentes (alternativa a `--api-key`): `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `OPENROUTER_KEY`, `TYPESAFE_API_KEY`.
 
 ## Quickstart
 
-Evaluar un texto con la receta de copy:
+Los workflows se invocan **sólo por nombre** (sin ruta ni `.json`). Los built-in son de sólo lectura:
 
 ```bash
-pnpm m1 run examples/copy-checker.json \
-  --state "Empezá tu prueba gratis. Sin tarjeta." \
-  --json
+m1 workflow list
+m1 run copy-checker --slot copy --state "Empezá tu prueba gratis. Sin tarjeta." --json
 ```
 
-Evaluar una pantalla con la receta de UX (el `--state` va al slot `brief`, la imagen al slot `screens`):
+Evaluar una pantalla con el workflow de UX (el `--state` va al slot `brief`, la imagen al slot `screens`):
 
 ```bash
-pnpm m1 run examples/ux-checker.json \
+m1 run ux-checker \
   --state "App de turnos médicos, audiencia 30-50" \
   --image ./shots/home.png \
   --json
 ```
 
+Crear tu propio workflow a partir de un built-in:
+
+```bash
+m1 workflow new mi-copy --from copy-checker --description "Copy para landing"
+m1 workflow validate mi-copy
+m1 run mi-copy --slot copy --state "texto" --json
+```
+
 Inspeccionar los requests sin llamar al proveedor:
 
 ```bash
-pnpm m1 run examples/copy-checker.json --state "texto" --print-request
+m1 run copy-checker --slot copy --state "texto" --print-request
 ```
 
 ## Comandos
 
 | Comando | Para qué | Flags principales |
 | --- | --- | --- |
-| `m1 run <recipe>` | Ejecuta una receta sobre un trabajo | `-i, --input <file>`, `--state <text>`, `--state-file <file>`, `--image <path>` (repetible), `--slot <name>`, `--image-slot <name>`, `--stdin`, `--provider <alias>`, `--model <id>`, `--timeout <ms>`, `--local-start <mode>`, `--dry-run`, `--print-request`, `--trace`, `--json`, `--compact`, `-c, --config <file>` |
-| `m1 recipe validate <file>` | Valida esquema y reglas semánticas | `--json` |
-| `m1 recipe schema` | Imprime el JSON Schema de la receta | `--json` (misma salida) |
+| `m1 run <workflow>` | Ejecuta un workflow (por nombre) sobre un trabajo | `-i, --input <file>`, `--state <text>`, `--state-file <file>`, `--image <path>` (repetible), `--slot <name>`, `--image-slot <name>`, `--stdin`, `--provider <alias>`, `--model <id>`, `--timeout <ms>`, `--local-start <mode>`, `--download`, `--dry-run`, `--print-request`, `--trace`, `--json`, `--compact`, `-c, --config <file>` |
+| `m1 workflow list` (alias `ls`) | Lista nombre, tipo y descripción de los workflows | `--json` |
+| `m1 workflow show <name>` | Muestra el JSON completo y su metadata | `--json` |
+| `m1 workflow new <name>` (alias `create`) | Crea un workflow de usuario | `--from <name>`, `--role <role>`, `--description <text>`, `--json` |
+| `m1 workflow import <file>` | Importa un workflow desde JSON | `--name <name>`, `--json` |
+| `m1 workflow export <name>` | Exporta un workflow | `--out <file>` |
+| `m1 workflow edit <name>` | Abre `$EDITOR` y valida al guardar | `--json` |
+| `m1 workflow delete <name>` (alias `rm`) | Borra un workflow de usuario (los built-in no) | `--yes`, `--json` |
+| `m1 workflow validate <name\|file>` | Valida esquema y reglas semánticas | `--json` |
+| `m1 workflow schema` | Imprime el JSON Schema de un workflow | `--json` (misma salida) |
+| `m1 workflow guide` | Guía de autoría para agentes (formato + esqueleto) | `--json` |
+| `m1 provider list` (alias `ls`) | Lista los providers de la config global | `--json` |
+| `m1 provider presets` | Presets: cloudflare, openrouter, typesafe, llamacpp, custom | `--json` |
+| `m1 provider show <alias>` | Muestra un provider sin secretos | `--json` |
+| `m1 provider add <alias>` | Agrega un provider (global) | `--preset <id>`, `--kind <kind>`, `--base-url <url>`, `--model <id>`, `--api-key <key>`, `--api-key-env <VAR>`, `--account-id <id>`, `--default`, `--json` |
+| `m1 provider edit <alias>` | Cambia sólo los campos indicados | `--base-url`, `--model`, `--api-key`, `--api-key-env`, `--account-id`, `--clear-api-key`, `--json` |
+| `m1 provider remove <alias>` (alias `rm`) | Elimina provider y credencial | `--yes`, `--force`, `--json` |
+| `m1 provider set-default <alias>` (alias `use`) | Fija el provider default | `--json` |
+| `m1 provider test <alias>` | Chequeos estructurales, sin red | `--json` |
 | `m1 auth set <alias>` | Guarda credenciales del provider | `--token <key>`, `--account-id <id>`, `--env <VAR>`, `--json` |
 | `m1 auth status` | Muestra providers configurados sin secretos | `--json`, `-c, --config <file>` |
 | `m1 auth remove <alias>` (alias `rm`) | Borra credenciales guardadas | `--json` |
@@ -86,7 +121,7 @@ pnpm m1 run examples/copy-checker.json --state "texto" --print-request
 | `m1 model use <id>` | Fija el modelo del provider | `--provider <alias>`, `--project`, `--json`, `-c, --config <file>` |
 | `m1 model reset` | Borra la preferencia de modelo del usuario | `--provider <alias>`, `--json`, `-c, --config <file>` |
 | `m1 local status` | Muestra si el servidor local está corriendo (no lo arranca) | `--provider <alias>`, `--json`, `-c, --config <file>` |
-| `m1 local start` | Verifica y, si no responde, levanta el servidor local (idempotente) | `--provider <alias>`, `--json`, `-c, --config <file>` |
+| `m1 local start` | Verifica y, si no responde, levanta el servidor local (idempotente) | `--provider <alias>`, `--download`, `--json`, `-c, --config <file>` |
 | `m1 local stop` | Detiene el servidor local registrado | `--provider <alias>`, `--json`, `-c, --config <file>` |
 | `m1 doctor` | Diagnóstico de Node, config, `.env` y providers (incluye el servidor local) | `--json`, `-c, --config <file>` |
 | `m1 guide` | Tutorial para agentes: comandos, salida, exit codes y recuperación de errores | `--json` |
@@ -109,7 +144,7 @@ Notas de comportamiento:
 | `2` | `error` | Error de uso, validación, input, config, proveedor o timeout |
 | `3` | `needs_review` | Veredicto `needs_review` (criterio `blocker` con baja confianza) |
 
-`doctor` usa 0/2. `recipe validate` usa 0/2. Cualquier error de la CLI (`fail()`) termina en 2.
+`doctor` usa 0/2. `workflow validate` usa 0/2. Cualquier error de la CLI (`fail()`) termina en 2.
 
 ## Para agentes de IA
 
@@ -133,13 +168,13 @@ Contrato:
 - Para inspeccionar sin gastar llamadas: `--print-request` o `--dry-run`.
 - Con modelo local, la primera vez puede tardar en cargar: `--timeout 300000`.
 
-El contrato completo está en [AGENTS.md](AGENTS.md) y el manual extendido en
-[docs/for-agents.md](docs/for-agents.md).
+El contrato completo está en [AGENTS.md](https://github.com/rey9606/m1-agent-mcp/blob/main/AGENTS.md) y el manual extendido en
+[docs/for-agents.md](https://github.com/rey9606/m1-agent-mcp/blob/main/docs/for-agents.md).
 
 ## Cómo funciona
 
 ```text
-receta.json
+workflow.json
    |
    v
 validar (zod + chequeos semanticos)
@@ -169,7 +204,7 @@ Puntos clave:
 - **`when` se evalúa antes de armar el state.** Si da falso, la etapa se saltea y no cuesta una llamada.
 - **`state` es la única parte dinámica del request.** Las `instructions` de los criterios son estáticas; el contexto variable va en `state` mediante plantillas `{{...}}`.
 - **La normalización es fija:** `noul`/`choice`/`score` se convierten a 0..1, se aplica `polarity`, se compara contra `passAt`, y se pondera por `weight`.
-- **El veredicto no promedia:** se decide por acceptance y por criterios `blocker` (ver [docs/recipe-spec.md](docs/recipe-spec.md)).
+- **El veredicto no promedia:** se decide por acceptance y por criterios `blocker` (ver [docs/workflow-spec.md](https://github.com/rey9606/m1-agent-mcp/blob/main/docs/workflow-spec.md)).
 
 ## Multi-proveedor
 
@@ -185,23 +220,25 @@ La precedencia de secretos es: `apiKey`/`accountId` explícitos en la config > v
 
 Modelos Clef disponibles (todos con visión): `@cf/cloudflare/clef` (65.536 ctx, $0,24/M), `@cf/cloudflare/clef-flash` (24.576 ctx, $0,038/M) y `@cf/cloudflare/clef-omni` (65.536 ctx, $0,15/M, además audio/video). `m1 models` los consulta en vivo; `m1 model use <id>` fija el default.
 
-OpenRouter expone modelos de decisión (`output_modalities=decisions`) con el mismo contrato System One. `m1 models --provider or` consulta el catálogo en vivo y `m1 models --provider or --free` deja sólo los gratuitos (al 2026-10-28: `baseten/mammoth-1:free`, `baseten/elephant-1:free`, `respan/span-01-lite:free`; son sólo texto). El alias de ejemplo `or` usa `baseten/mammoth-1:free`; para visión conviene `typesafe/jev-1.14` o `cloudflare/clef-*`. Los modelos `:free` tienen rate limits más bajos. Detalle del contrato en [docs/api-contract.md](docs/api-contract.md).
+OpenRouter expone modelos de decisión (`output_modalities=decisions`) con el mismo contrato System One. `m1 models --provider or` consulta el catálogo en vivo y `m1 models --provider or --free` deja sólo los gratuitos (al 2026-10-28: `baseten/mammoth-1:free`, `baseten/elephant-1:free`, `respan/span-01-lite:free`; son sólo texto). El alias de ejemplo `or` usa `baseten/mammoth-1:free`; para visión conviene `typesafe/jev-1.14` o `cloudflare/clef-*`. Los modelos `:free` tienen rate limits más bajos. Detalle del contrato en [docs/api-contract.md](https://github.com/rey9606/m1-agent-mcp/blob/main/docs/api-contract.md).
 
 En OpenRouter las imágenes viajan dentro de `state` como partes `image_url` (no en un campo `images` de nivel superior). Por eso, al usar `--image` el `state` debe ser string o array; un `state` objeto produce `E_CONFIG` antes de llamar.
 
 ### Modelo local (llama.cpp)
 
-El alias `liquid` de la config de ejemplo sirve **Liquid d1-2B** con `llama-server`: no necesita API key ni `.env`. La primera ejecución descarga el GGUF Q8_0 (≈2,5 GB); después queda en la caché de llama.cpp.
+El preset `llamacpp` crea un provider `kind: systemone` con `llama-server`, **sin modelo asociado**: el modelo se configura con `provider.model`, ya sea un repo de HuggingFace (`org/repo:quant`) o la ruta a un `.gguf`.
+
+```bash
+m1 provider add local --preset llamacpp
+m1 provider edit local --model LiquidAI/d1-omni-600M-GGUF:Q8_0
+m1 local start --provider local
+m1 run copy-checker --provider local --slot copy --state "texto"
+```
 
 Requisitos:
 
-- `llama-server` en el `PATH` (build reciente de llama.cpp; el soporte de d1-2B se mergeó el 2026-10-27).
-- Un puerto libre; el alias usa `9931`.
-
-```bash
-pnpm m1 run examples/copy-checker.json --provider liquid \
-  --state "Me cobraron dos veces este mes, necesito el reintegro"
-```
+- `llama-server` en el `PATH`, o `launch.command` con la ruta absoluta.
+- Un puerto libre; el preset usa `9931`.
 
 Antes de llamar, `m1` sondea `GET /health` en `baseUrl`:
 
@@ -211,6 +248,15 @@ Antes de llamar, `m1` sondea `GET /health` en `baseUrl`:
 - `--local-start ask` pregunta en TTY; `--local-start never` falla con el comando exacto.
 - **El servidor queda corriendo al terminar el run.** No se apaga solo: el usuario decide. Cerrá su consola o usá `m1 local stop`.
 - En Windows se abre una **consola propia** (minimizada) titulada `m1 llama-server…`; `"launch": { "console": false }` la oculta. El log se sigue escribiendo en el archivo (`--log-file`).
+
+**Modelo y descarga:** si `provider.model` es un repo de HuggingFace y todavía no hay un `.gguf` en la caché, `m1` pregunta antes de descargar. Sin TTY falla con el comando exacto; para automatizar usá `--download`:
+
+```bash
+m1 local start --provider local --download
+m1 run copy-checker --provider local --slot copy --state "texto" --download
+```
+
+La descarga la hace el propio `llama-server -hf <repo>:<quant>` y queda en la caché de HuggingFace. Si `provider.model` es una ruta `.gguf`, se usa `-m <ruta>`.
 
 **Elección de puerto:** parte de `launch.port` (9931). Si está ocupado por otro proceso, prueba 9932, 9933… hasta encontrar uno libre, arranca ahí y reescribe `baseUrl` en memoria. No hace falta tocar la config.
 
@@ -231,12 +277,13 @@ Detalle de `launch`:
 "liquid": {
   "kind": "systemone",
   "baseUrl": "http://127.0.0.1:9931/v1/systemone",
-  "model": "d1-2B",
+  "model": "LiquidAI/d1-omni-600M-GGUF:Q8_0",
   "imageFormat": "dataUrl",
   "timeoutMs": 300000,
   "launch": {
     "command": "llama-server",
-    "args": ["-hf", "LiquidAI/d1-2B-GGUF:Q8_0", "-b", "8192", "-ub", "8192"],
+    "args": ["-b", "8192", "-ub", "8192"],
+    "mmproj": "C:/ruta/mmproj-d1-omni-600M-Q8_0.gguf",
     "port": 9931,
     "startTimeoutMs": 240000,
     "autoStart": "always",
@@ -245,15 +292,17 @@ Detalle de `launch`:
 }
 ```
 
-- `args` admite `{port}`, `{host}`, `{model}` y `{baseUrl}`. Para `llama-server` se agregan `--port`, `--host` y `--alias <model>` si faltan; el alias hace que `/v1/models` publique el id que usa la receta.
+- `provider.model` elige el modelo: `org/repo:quant` se pasa como `-hf`, y una ruta `.gguf` como `-m`. Si `launch.args` ya trae `-m`, `--model`, `-hf` o `--hf-repo`, esos args mandan y no se agrega nada.
+- `launch.mmproj` agrega `--mmproj <ruta>` (necesario para visión).
+- `args` admite `{port}`, `{host}`, `{model}` y `{baseUrl}`. Para `llama-server` se agregan `--port`, `--host` y `--alias <model>` si faltan; el alias hace que `/v1/models` publique el id que usa el workflow.
 - `autoStart`: `always` (default), `ask` o `never`.
 - `console`: en Windows abre una consola propia para el servidor (default `true`). Al cerrarla se apaga; el log queda igual en `logs/<alias>.log`.
 - `launch` sólo aplica a `kind: systemone` con `baseUrl` loopback.
 - **Imágenes:** agregá el proyector (`--mmproj ...`) y un `-ub` suficiente. Sin `mmproj`, el servidor devuelve 501 para imágenes. d1-2B reserva como máximo la mitad de `-ub` por imagen. Con `llama.cpp` además hay que usar `"imageFormat": "dataUrl"` y cubrir los tokens de la imagen en `-b`/`-ub` (900×600 ≈ 1,8k tokens).
-- **Costo por pregunta:** `/v1/systemone` procesa una tarea por pregunta y re-codifica la imagen en cada una. Medido con `d1-omni-600M` Q8_0 en CPU: 384×384 + 4 preguntas ≈ 9 s; 900×600 + 4 preguntas ≈ 108 s (+ `diagnostico` ≈ 130 s). Para recetas multimodales usá `timeoutMs`/`--timeout` de 300000; el default de 60 s corta antes.
-- **Alternativas:** `LiquidAI/d1-3B-GGUF:Q8_0` (soporte más estable) o `LiquidAI/d1-omni-600M-GGUF` (imágenes + audio; requiere `--mmproj`). Cambiá `args` y `model`. En `lfm2-d1-omni` todo el prompt por pregunta se evalúa en un batch: `-ub` debe cubrirlo. El modelo está entrenado a 16.384 tokens (con imágenes, el texto se recorta a 896), aunque el GGUF declare `context_length = 128000`.
+- **Costo por pregunta:** `/v1/systemone` procesa una tarea por pregunta y re-codifica la imagen en cada una. Medido con `d1-omni-600M` Q8_0 en CPU: 384×384 + 4 preguntas ≈ 9 s; 900×600 + 4 preguntas ≈ 108 s (+ `diagnostico` ≈ 130 s). Para workflows multimodales usá `timeoutMs`/`--timeout` de 300000; el default de 60 s corta antes.
+- **Alternativas:** `LiquidAI/d1-3B-GGUF:Q8_0` (soporte más estable) o `LiquidAI/d1-omni-600M-GGUF` (imágenes + audio; requiere `--mmproj`). Cambiá `model`. En `lfm2-d1-omni` todo el prompt por pregunta se evalúa en un batch: `-ub` debe cubrirlo. El modelo está entrenado a 16.384 tokens (con imágenes, el texto se recorta a 896), aunque el GGUF declare `context_length = 128000`.
 
-Orden de selección del provider: `--provider` > `provider` de la receta > `default` de `m1.config.json`.
+Orden de selección del provider: `--provider` > `provider` del workflow > `default` de `m1.config.json`.
 
 ### Agregar un proveedor nuevo
 
@@ -290,23 +339,23 @@ pnpm lint              # ESLint flat config, type-aware en src/
 pnpm typecheck
 ```
 
-El pre-commit corre guardas de seguridad (leyendo el índice git), `secretlint`, ESLint con autofix, tests relacionados con el diff y typecheck condicional (sólo si hay `.ts` staged). El `commit-msg` valida Conventional Commits y el `pre-push` corre `pnpm audit --audit-level=high` si cambió el lockfile más la suite completa. Detalle de cada capa, credenciales del live y convención de commits en [docs/testing.md](docs/testing.md).
+El pre-commit corre guardas de seguridad (leyendo el índice git), `secretlint`, ESLint con autofix, tests relacionados con el diff y typecheck condicional (sólo si hay `.ts` staged). El `commit-msg` valida Conventional Commits y el `pre-push` corre `pnpm audit --audit-level=high` si cambió el lockfile más la suite completa. Detalle de cada capa, credenciales del live y convención de commits en [docs/testing.md](https://github.com/rey9606/m1-agent-mcp/blob/main/docs/testing.md).
 
 ## Estado del proyecto
 
 - Motor, validación, normalización, agregación y cuatro providers implementados.
-- Recetas de ejemplo: `examples/copy-checker.json`, `examples/ux-checker.json`.
+- Workflows built-in: `copy-checker` y `ux-checker` (definidos en `examples/`, de sólo lectura).
 - Tests en `tests/`: unitarios, contrato de ejemplos, e2e de CLI, tooling, integración local y live opt-in.
-- Pendiente: servidor **MCP** que exponga `run`/`recipe validate` como tools y el catálogo de recetas como resources.
+- Pendiente: servidor **MCP** que exponga `run`/`workflow validate` como tools y el catálogo de workflows como resources.
 - Pendiente: concurrencia entre etapas independientes (hoy el motor recorre las etapas en serie).
 
 ## Documentación
 
-- [docs/recipe-spec.md](docs/recipe-spec.md) — referencia de la receta v1, expresiones, plantillas y veredicto.
-- [AGENTS.md](AGENTS.md) — contrato operativo para agentes: reglas, salida JSON, exit codes y recuperación de errores.
-- [docs/for-agents.md](docs/for-agents.md) — manual extendido para que otro agente use la CLI sin equivocarse.
-- [docs/api-contract.md](docs/api-contract.md) — contrato de Clef/JEV y límites/costos.
-- [docs/testing.md](docs/testing.md) — pirámide de tests, comandos, tests live y flujo pre-commit.
+- [docs/workflow-spec.md](https://github.com/rey9606/m1-agent-mcp/blob/main/docs/workflow-spec.md) — referencia del formato v1, expresiones, plantillas y veredicto.
+- [AGENTS.md](https://github.com/rey9606/m1-agent-mcp/blob/main/AGENTS.md) — contrato operativo para agentes: reglas, salida JSON, exit codes y recuperación de errores.
+- [docs/for-agents.md](https://github.com/rey9606/m1-agent-mcp/blob/main/docs/for-agents.md) — manual extendido para que otro agente use la CLI sin equivocarse.
+- [docs/api-contract.md](https://github.com/rey9606/m1-agent-mcp/blob/main/docs/api-contract.md) — contrato de Clef/JEV y límites/costos.
+- [docs/testing.md](https://github.com/rey9606/m1-agent-mcp/blob/main/docs/testing.md) — pirámide de tests, comandos, tests live y flujo pre-commit.
 
 ## Discrepancias detectadas
 

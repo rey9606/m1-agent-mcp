@@ -119,8 +119,8 @@ export async function buildRunInput(flags: InputFlags, recipe: Recipe, cwd = pro
   if (flags.images.length > 0) {
     const slot = flags.imageSlot ?? pickImageSlot(recipe);
     if (!slot) {
-      throw new M1Error('E_INPUT', 'la receta no declara slots de imagen', {
-        hint: 'quitá --image o agregá un slot "image[]" a la receta',
+      throw new M1Error('E_INPUT', 'el workflow no declara slots de imagen', {
+        hint: 'quitá --image o agregá un slot "image[]" al workflow',
       });
     }
     const existing = obj[slot];

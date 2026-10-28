@@ -1,6 +1,6 @@
-# Especificación de receta v1 (`m1agent/recipe@1`)
+# Especificación de workflow v1 (`m1agent/recipe@1`)
 
-Referencia del formato que consume el motor. Fuente de verdad: `src/schema/recipe.ts` (esquema zod) y `src/core/validate.ts` (reglas semánticas). El JSON Schema se puede imprimir con `pnpm m1 recipe schema`.
+Referencia del formato que consume el motor. Fuente de verdad: `src/schema/recipe.ts` (esquema zod) y `src/core/validate.ts` (reglas semánticas). El JSON Schema se puede imprimir con `m1 workflow schema`.
 
 ## Estructura general
 
@@ -418,7 +418,7 @@ Consecuencias:
 }
 ```
 
-Ambas pasan `pnpm m1 recipe validate`.
+Ambas pasan `m1 workflow validate`.
 
 ## Discrepancias detectadas
 

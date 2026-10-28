@@ -60,21 +60,14 @@ function parseLaunch(alias: string, raw: unknown): LocalLaunchConfig {
   }
 
   if (p.args !== undefined) {
-    if (
-      !Array.isArray(p.args) ||
-      p.args.length === 0 ||
-      p.args.some((arg) => typeof arg !== 'string')
-    ) {
-      throw new M1Error('E_CONFIG', `provider "${alias}": launch.args debe ser un array de strings no vacío`, {
+    // `args` puede faltar o venir vacío: `llama-server` también sirve el modelo
+    // por configuración propia (preset llamacpp).
+    if (!Array.isArray(p.args) || p.args.some((arg) => typeof arg !== 'string')) {
+      throw new M1Error('E_CONFIG', `provider "${alias}": launch.args debe ser un array de strings`, {
         hint: 'ej: ["-hf", "LiquidAI/d1-2B-GGUF:Q8_0"]',
       });
     }
     launch.args = [...(p.args as string[])];
-  }
-  if (!launch.args) {
-    throw new M1Error('E_CONFIG', `provider "${alias}": launch requiere args`, {
-      hint: 'ej: "launch": { "args": ["-hf", "LiquidAI/d1-2B-GGUF:Q8_0"] }',
-    });
   }
 
   if (p.port !== undefined) {

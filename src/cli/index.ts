@@ -1,7 +1,28 @@
 #!/usr/bin/env node
 import { Command, CommanderError } from 'commander';
 import { runCommand } from './commands/run';
-import { recipeSchemaCommand, recipeValidateCommand } from './commands/recipe';
+import {
+  workflowDeleteCommand,
+  workflowEditCommand,
+  workflowExportCommand,
+  workflowGuideCommand,
+  workflowImportCommand,
+  workflowListCommand,
+  workflowNewCommand,
+  workflowSchemaCommand,
+  workflowShowCommand,
+  workflowValidateCommand,
+} from './commands/workflow';
+import {
+  providerAddCommand,
+  providerEditCommand,
+  providerListCommand,
+  providerPresetsCommand,
+  providerRemoveCommand,
+  providerSetDefaultCommand,
+  providerShowCommand,
+  providerTestCommand,
+} from './commands/provider';
 import { authRemoveCommand, authSetCommand, authStatusCommand } from './commands/auth';
 import { doctorCommand } from './commands/doctor';
 import { modelResetCommand, modelShowCommand, modelUseCommand, modelsCommand } from './commands/models';
@@ -18,8 +39,10 @@ const ROOT_HELP = `
 Ejemplos:
   $ m1 guide                                   tutorial completo para agentes
   $ m1 doctor                                  verifica entorno, config y providers
-  $ m1 run examples/copy-checker.json --state "texto a evaluar"
-  $ m1 run examples/ux-checker.json --image pantalla.png --timeout 300000 --json
+  $ m1 workflow list                           workflows disponibles (nombre + descripción)
+  $ m1 run copy-checker --state "texto a evaluar"
+  $ m1 run ux-checker --image pantalla.png --timeout 300000 --json
+  $ m1 provider list                           providers configurados
   $ m1 local start --provider liquid           levanta el modelo local si no responde
 
 Contrato para agentes:
@@ -48,7 +71,7 @@ program.exitOverride();
 
 program
   .name('m1')
-  .description('Agentes de decisión (Clef/JEV) definidos por recetas JSON')
+  .description('Agentes de decisión (Clef/JEV) definidos por workflows JSON')
   .version(CLI_VERSION, '-v, --version', 'muestra la versión')
   .showSuggestionAfterError(true)
   .addHelpText('after', ROOT_HELP);
@@ -63,8 +86,8 @@ program
 
 program
   .command('run')
-  .description('ejecuta una receta sobre un trabajo')
-  .argument('<recipe>', 'ruta al JSON de la receta')
+  .description('ejecuta un workflow sobre un trabajo')
+  .argument('<workflow>', 'nombre del workflow (o ruta .json para CI)')
   .option('-i, --input <file>', 'JSON con los slots de entrada')
   .option('--state <text>', 'texto para el slot principal')
   .option('--state-file <file>', 'archivo de texto para el slot principal')
@@ -76,14 +99,15 @@ program
   .option('--model <id>', 'modelo a usar (override)')
   .option('--timeout <ms>', 'timeout por etapa (no del run completo)')
   .option('--local-start <mode>', 'ask|always|never: levanta el modelo local si no responde (default: always)')
+  .option('--download', 'permite descargar el modelo GGUF si falta (sin preguntar)')
   .option('--dry-run', 'arma el request y no llama al proveedor')
   .option('--print-request', 'imprime el/los request(s) que se enviarían (implica --dry-run)')
   .option('--trace', 'muestra las etapas por stderr')
   .option('--json', 'salida JSON (contrato estable)')
   .option('--compact', 'salida de una línea')
   .option('-c, --config <file>', 'ruta a m1.config.json')
-  .action(async (recipe: string, flags) => {
-    await runCommand(recipe, flags);
+  .action(async (workflow: string, flags) => {
+    await runCommand(workflow, flags);
   });
 
 program
@@ -148,6 +172,7 @@ local
   .command('start')
   .description('levanta el servidor local si no responde y lo deja corriendo')
   .option('--provider <alias>', 'provider local a levantar (default: el de la config)')
+  .option('--download', 'descarga el modelo GGUF si falta, sin preguntar')
   .option('--json', 'salida JSON')
   .option('-c, --config <file>', 'ruta a m1.config.json')
   .action(async (flags) => {
@@ -164,23 +189,194 @@ local
     localStopCommand(flags);
   });
 
-const recipe = program.command('recipe').description('herramientas de recetas');
+const workflow = program
+  .command('workflow')
+  .description('workflows: listar, crear, importar/exportar y validar');
 
-recipe
-  .command('validate')
-  .description('valida una receta sin ejecutarla')
-  .argument('<file>', 'ruta al JSON de la receta')
+workflow
+  .command('list')
+  .alias('ls')
+  .description('lista los workflows con nombre, tipo y descripción')
   .option('--json', 'salida JSON')
-  .action(async (file: string, flags) => {
-    await recipeValidateCommand(file, flags);
+  .action((flags) => {
+    workflowListCommand(flags);
   });
 
-recipe
+workflow
+  .command('show')
+  .description('muestra un workflow completo por nombre')
+  .argument('<name>', 'nombre del workflow')
+  .option('--json', 'salida JSON')
+  .action((name: string, flags) => {
+    workflowShowCommand(name, flags);
+  });
+
+workflow
+  .command('new')
+  .alias('create')
+  .description('crea un workflow nuevo en ~/.config/m1-agent/workflows')
+  .argument('<name>', 'nombre (minúsculas, números y guiones)')
+  .option('--from <name>', 'copia un workflow existente como base')
+  .option('--role <role>', 'rol del evaluador')
+  .option('--description <text>', 'descripción de una línea')
+  .option('--json', 'salida JSON')
+  .action((name: string, flags) => {
+    workflowNewCommand(name, flags);
+  });
+
+workflow
+  .command('import')
+  .description('importa un workflow desde un archivo JSON')
+  .argument('<file>', 'ruta al archivo JSON')
+  .option('--name <name>', 'nombre destino (default: el id del archivo)')
+  .option('--json', 'salida JSON')
+  .action((file: string, flags) => {
+    workflowImportCommand(file, flags);
+  });
+
+workflow
+  .command('export')
+  .description('exporta un workflow (stdout o --out)')
+  .argument('<name>', 'nombre del workflow')
+  .option('--out <file>', 'escribe el JSON en un archivo')
+  .action((name: string, flags) => {
+    workflowExportCommand(name, flags);
+  });
+
+workflow
+  .command('edit')
+  .description('abre el workflow en $EDITOR y lo valida al guardar')
+  .argument('<name>', 'nombre del workflow (no built-in)')
+  .option('--json', 'salida JSON')
+  .action((name: string, flags) => {
+    workflowEditCommand(name, flags);
+  });
+
+workflow
+  .command('delete')
+  .alias('rm')
+  .description('borra un workflow de usuario (los built-in son de sólo lectura)')
+  .argument('<name>', 'nombre del workflow')
+  .option('--yes', 'no pedir confirmación')
+  .option('--json', 'salida JSON')
+  .action(async (name: string, flags) => {
+    await workflowDeleteCommand(name, flags);
+  });
+
+workflow
+  .command('validate')
+  .description('valida un workflow sin ejecutarlo')
+  .argument('<ref>', 'nombre del workflow (o ruta .json)')
+  .option('--json', 'salida JSON')
+  .action((ref: string, flags) => {
+    workflowValidateCommand(ref, flags);
+  });
+
+workflow
   .command('schema')
-  .description('imprime el JSON Schema de una receta')
+  .description('imprime el JSON Schema de un workflow')
   .option('--json', 'salida JSON (igual)')
+  .action(() => {
+    workflowSchemaCommand();
+  });
+
+workflow
+  .command('guide')
+  .description('cómo escribir un workflow en el formato correcto (para agentes)')
+  .option('--json', 'guía estructurada en JSON')
   .action((flags) => {
-    recipeSchemaCommand(flags);
+    workflowGuideCommand(flags);
+  });
+
+const provider = program.command('provider').description('providers: presets, alta, edición y default');
+
+provider
+  .command('list')
+  .alias('ls')
+  .description('lista los providers de la config global')
+  .option('--json', 'salida JSON')
+  .action((flags) => {
+    providerListCommand(flags);
+  });
+
+provider
+  .command('presets')
+  .description('presets disponibles (cloudflare, openrouter, typesafe, llamacpp, custom)')
+  .option('--json', 'salida JSON')
+  .action((flags) => {
+    providerPresetsCommand(flags);
+  });
+
+provider
+  .command('show')
+  .description('muestra un provider sin revelar secretos')
+  .argument('<alias>', 'alias del provider')
+  .option('--json', 'salida JSON')
+  .action((alias: string, flags) => {
+    providerShowCommand(alias, flags);
+  });
+
+provider
+  .command('add')
+  .description('agrega un provider a la config global')
+  .argument('<alias>', 'alias del provider')
+  .option('--preset <id>', 'cloudflare|openrouter|typesafe|llamacpp|custom')
+  .option('--kind <kind>', 'cloudflare|typesafe|openrouter|systemone|mock')
+  .option('--base-url <url>', 'URL del endpoint (systemone/custom)')
+  .option('--model <id>', 'modelo por defecto')
+  .option('--api-key <key>', 'API key (se guarda en credentials.json)')
+  .option('--api-key-env <VAR>', 'variable de entorno con la API key')
+  .option('--account-id <id>', 'account id (Cloudflare)')
+  .option('--default', 'dejarlo como provider default')
+  .option('--json', 'salida JSON')
+  .action((alias: string, flags) => {
+    providerAddCommand(alias, flags);
+  });
+
+provider
+  .command('edit')
+  .description('edita un provider existente (sólo los campos indicados)')
+  .argument('<alias>', 'alias del provider')
+  .option('--base-url <url>', 'URL del endpoint')
+  .option('--model <id>', 'modelo por defecto')
+  .option('--api-key <key>', 'API key (se guarda en credentials.json)')
+  .option('--api-key-env <VAR>', 'variable de entorno con la API key')
+  .option('--account-id <id>', 'account id (Cloudflare)')
+  .option('--clear-api-key', 'borra la API key guardada')
+  .option('--json', 'salida JSON')
+  .action((alias: string, flags) => {
+    providerEditCommand(alias, flags);
+  });
+
+provider
+  .command('remove')
+  .alias('rm')
+  .description('elimina un provider y su credencial')
+  .argument('<alias>', 'alias del provider')
+  .option('--yes', 'no pedir confirmación')
+  .option('--force', 'permite borrar el provider default')
+  .option('--json', 'salida JSON')
+  .action(async (alias: string, flags) => {
+    await providerRemoveCommand(alias, flags);
+  });
+
+provider
+  .command('set-default')
+  .alias('use')
+  .description('fija el provider default')
+  .argument('<alias>', 'alias del provider')
+  .option('--json', 'salida JSON')
+  .action((alias: string, flags) => {
+    providerSetDefaultCommand(alias, flags);
+  });
+
+provider
+  .command('test')
+  .description('chequeos estructurales del provider (sin red)')
+  .argument('<alias>', 'alias del provider')
+  .option('--json', 'salida JSON')
+  .action(async (alias: string, flags) => {
+    await providerTestCommand(alias, flags);
   });
 
 const auth = program.command('auth').description('credenciales de proveedores');

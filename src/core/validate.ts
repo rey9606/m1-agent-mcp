@@ -13,7 +13,7 @@ interface ValidationIssue {
   message: string;
 }
 
-const HINT = 'corregí los campos listados; `m1 recipe schema` imprime el JSON Schema';
+const HINT = 'corregí los campos listados; `m1 workflow schema` imprime el JSON Schema';
 
 const LITERALS = new Set(['true', 'false', 'null', 'undefined']);
 
@@ -27,7 +27,7 @@ function refExists(ref: string, known: Set<string>): boolean {
 }
 
 /**
- * Valida una receta cruda (parse + chequeos semánticos que zod no puede ver).
+ * Valida un workflow crudo (parse + chequeos semánticos que zod no puede ver).
  * Junta TODOS los problemas antes de fallar, para que el agente los corrija de una.
  */
 export function validateRecipe(
@@ -40,7 +40,7 @@ export function validateRecipe(
       path: issue.path.map(String).join('.') || '(root)',
       message: issue.message,
     }));
-    throw new M1Error('E_VALIDATION', `receta inválida: ${details.length} problema(s) de esquema`, {
+    throw new M1Error('E_VALIDATION', `workflow inválido: ${details.length} problema(s) de esquema`, {
       details,
       hint: HINT,
     });
@@ -58,7 +58,7 @@ export function validateRecipe(
   if (!id) {
     errors.push({
       path: 'id',
-      message: 'falta el id de la receta (no hay id, defaultId ni filePath del cual derivarlo)',
+      message: 'falta el id del workflow (no hay id, defaultId ni filePath del cual derivarlo)',
     });
   }
 
@@ -101,7 +101,7 @@ export function validateRecipe(
   if (recipe.stages.length > maxStages) {
     errors.push({
       path: 'stages',
-      message: `la receta declara ${recipe.stages.length} etapas y el límite es ${maxStages} (limits.maxStages)`,
+      message: `el workflow declara ${recipe.stages.length} etapas y el límite es ${maxStages} (limits.maxStages)`,
     });
   }
 
@@ -218,7 +218,7 @@ export function validateRecipe(
   });
 
   if (errors.length > 0) {
-    throw new M1Error('E_VALIDATION', `receta inválida: ${errors.length} problema(s) semántico(s)`, {
+    throw new M1Error('E_VALIDATION', `workflow inválido: ${errors.length} problema(s) semántico(s)`, {
       details: errors,
       hint: HINT,
     });

@@ -1,14 +1,45 @@
 {
   "name": "m1-agent",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.1.3",
   "type": "module",
-  "description": "Agentes de decisión (Clef/JEV) definidos por recetas JSON. CLI + motor de flujo.",
+  "description": "CLI de agentes de decisión (Clef/JEV) definidos por workflows JSON.",
+  "license": "MIT",
   "bin": {
-    "m1": "./dist/cli/index.js"
+    "m1": "dist/cli/index.js",
+    "m1-agent": "dist/cli/index.js"
   },
+  "files": [
+    "dist",
+    "examples",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rey9606/m1-agent-mcp.git"
+  },
+  "homepage": "https://github.com/rey9606/m1-agent-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/rey9606/m1-agent-mcp/issues"
+  },
+  "keywords": [
+    "cli",
+    "ai",
+    "agents",
+    "workflow",
+    "llm",
+    "decision",
+    "clef",
+    "jev",
+    "openrouter",
+    "cloudflare",
+    "llama.cpp"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "dev": "tsx src/cli/index.ts",
@@ -22,6 +53,8 @@
     "test:live": "node scripts/run-live-tests.mjs",
     "lint": "eslint .",
     "precommit": "node scripts/precommit-guards.mjs",
+    "prepack": "pnpm build",
+    "pack:check": "npm pack --dry-run",
     "prepare": "husky"
   },
   "lint-staged": {
@@ -30,7 +63,7 @@
       "vitest related --run --passWithNoTests"
     ],
     "*.{ts,mts,cts,js,mjs,cjs,json,md,yml,yaml,sh,txt,example}": "secretlint",
-    "examples/*.json": "node scripts/validate-recipes.mjs"
+    "examples/*.json": "node scripts/validate-workflows.mjs"
   },
   "dependencies": {
     "commander": "^13.1.0",

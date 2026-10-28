@@ -1,6 +1,6 @@
 # Manual para agentes: usar `m1` sin equivocarse
 
-Este documento está pensado para que otro agente o LLM invoque la CLI de forma segura. Asume que el repositorio ya está instalado (`pnpm install`) y que existe `m1.config.json`.
+Este documento está pensado para que otro agente o LLM invoque la CLI de forma segura. Asume que `m1` está disponible (`npx --yes -p m1-agent m1 …`, instalación global o `npm link` desde el repo) y que hay un provider configurado.
 
 ## Descubrimiento (antes de improvisar)
 
@@ -11,15 +11,20 @@ m1 guide                 # tutorial completo para agentes
 m1 guide --json          # mismas secciones, estructuradas
 m1 --help                # comandos y contrato
 m1 <comando> --help      # opciones/argumentos del comando
-m1 recipe schema         # JSON Schema de recetas
+m1 workflow schema       # JSON Schema de workflows
 m1 --version
 ```
 
-Si `m1` no está en el PATH, instalalo globalmente desde el repo:
+Si `m1` no está en el PATH, usalo con npx sin instalar nada:
 
 ```bash
-pnpm build
-npm link
+npx --yes -p m1-agent m1 --version
+```
+
+O instalalo globalmente:
+
+```bash
+npm install -g m1-agent
 m1 --version
 ```
 
@@ -27,12 +32,12 @@ m1 --version
 
 Nunca ejecutes `run` a ciegas. El orden es siempre:
 
-1. `m1 recipe schema` si no conocés el formato.
-2. `m1 recipe validate <receta>` después de escribir o editar la receta.
-3. `m1 run <receta> ... --print-request` para ver el request exacto sin gastar una llamada.
-4. `m1 run <receta> ... --json` recién cuando el request es el esperado.
+1. `m1 workflow schema` si no conocés el formato.
+2. `m1 workflow validate <nombre>` después de escribir o editar el workflow.
+3. `m1 run <workflow> ... --print-request` para ver el request exacto sin gastar una llamada.
+4. `m1 run <workflow> ... --json` recién cuando el request es el esperado.
 
-Si el paso 2 o 3 falla, no sigas: el error ya dice qué corregir. Un `run` real con una receta inválida no aporta información nueva.
+Si el paso 2 o 3 falla, no sigas: el error ya dice qué corregir. Un `run` real con un workflow inválido no aporta información nueva.
 
 ## Construir la entrada (`--input`)
 
@@ -60,7 +65,7 @@ Detalles:
 - `image` acepta `data:image/png;base64,...`; el tipo real se detecta por magic bytes y, si declarás `content_type`, debe coincidir.
 - Si un slot opcional falta, el motor lo rellena: `text` → `""`, `image[]` → `[]`, `json`/`image` → `null`.
 - Las claves no declaradas se conservan y quedan disponibles en plantillas y expresiones.
-- No pongas secretos en la entrada ni en la receta.
+- No pongas secretos en la entrada ni en el workflow.
 
 ### Atajos sin archivo
 
@@ -75,10 +80,10 @@ Detalles:
 
 `--state`, `--state-file` y `--image` se aplican **después** de `--input`, así que pisan o agregan valores.
 
-## Escribir una receta nueva: checklist de 10 pasos
+## Escribir un workflow nuevo: checklist de 10 pasos
 
-1. **Copiá** `examples/copy-checker.json` o `examples/ux-checker.json` como base.
-2. **Definí `id` y `role`.** El `id` puede salir del nombre del archivo, pero es mejor declararlo.
+1. **Creá el archivo** con `m1 workflow new mi-workflow --from copy-checker` (o `--from ux-checker`). Los built-in son de sólo lectura; copiarlos es la vía soportada.
+2. **Definí `id` y `role`.** El `id` es el nombre con el que se invoca (`m1 run mi-workflow`).
 3. **Declará los slots** en `input.slots` con el tipo correcto y `required` solo cuando sea imprescindible.
 4. **Escribí `input.state`** con las plantillas `{{slot}}` y una instrucción de tarea clara. Es el único lugar con contexto dinámico.
 5. **Definí los criterios**: `noul` para sí/no, `choice` para categorías, `score` para grados. Cada uno con `instructions` accionable, `passAt`, `weight`, `severity` y `remediation`.
@@ -86,7 +91,7 @@ Detalles:
 7. **Agregá `when`** solo si la etapa es condicional, referenciando ids ya calculados.
 8. **Agregá `derived`** si necesitás un índice compuesto; se evalúa en orden y antes de `acceptance`.
 9. **Agregá `acceptance`** para las condiciones duras del negocio. `blocker`/`major` reprobadas dan `fail`; `minor`/`info` dan `needs_review`. Los criterios `blocker` también reproeban por sí solos.
-10. **Validá, imprimí el request y corré**: `recipe validate`, `--print-request`, después `--json`. Probá primero con `--provider mock` para verificar el flujo.
+10. **Validá, imprimí el request y corré**: `workflow validate`, `--print-request`, después `--json`. Probá primero con `--provider mock` para verificar el flujo.
 
 Reglas de diseño que evitan problemas:
 
@@ -187,6 +192,16 @@ Los errores de uso (`E_USAGE`) incluyen la sugerencia de tipeo en `message`
 `m1 guide` / `m1 <comando> --help`. En modo humano, la CLI imprime además una
 línea `más: m1 guide · m1 <comando> --help`.
 
+## Workflows: dónde viven y cómo se invocan
+
+- Se invocan **sólo por nombre**: `m1 run copy-checker`. Sin ruta, sin `.json`.
+- **Built-in** (de sólo lectura): `copy-checker`, `ux-checker`. Salen del `examples/` del paquete.
+- **De usuario**: `~/.config/m1-agent/workflows/<nombre>.json` (override: `M1_WORKFLOWS_DIR`).
+- Nombres válidos: `^[a-z0-9][a-z0-9-]{0,63}$`.
+- Un workflow de usuario con el mismo nombre que uno built-in lo **pisa**.
+- `m1 workflow list` es la fuente de verdad de qué hay disponible.
+- Escape hatch para CI: pasar una ruta `.json` a `run`/`workflow validate` sigue funcionando.
+
 ## Modelo local (systemone + launch)
 
 Con un provider `kind: "systemone"` que tenga `launch`, `m1` administra el
@@ -208,6 +223,12 @@ m1 local stop   --provider liquid   # lo apaga
   `~/.cache/m1-agent/local/logs/<alias>.log`.
 - Si usás un provider cloud por error, el hint lista los aliases locales y el
   comando exacto.
+- **Modelo:** `provider.model` acepta un repo de HuggingFace (`org/repo:quant`,
+  se pasa como `-hf`) o una ruta `.gguf` (`-m`). Si no hay modelo, el provider
+  igual arranca y el servidor decide.
+- **Descarga:** si el GGUF no está en la caché, en TTY pregunta antes de bajar.
+  Sin TTY falla con el comando exacto. Para automatizar: `--download`.
+- `launch.mmproj` agrega `--mmproj <ruta>` para visión.
 
 ## Errores comunes y su fix
 
@@ -217,10 +238,10 @@ m1 local stop   --provider liquid   # lo apaga
 | `no hay entrada para evaluar` | No se pasó nada | `--input`, `--state`, `--state-file`, `--image` o `--stdin` |
 | `no se pudo determinar el slot para --state` (o `--state-file`) | Hay varios slots de texto | `--slot <name>` |
 | `referencia de plantilla desconocida` | `{{...}}` apunta a algo que no existe en el state | Revisar el nombre: `{{answers.<id>.normalized}}`, `{{criteria.<id>}}`, `{{slot}}` |
-| `referencia desconocida: "X"` en `when`/`derived`/`acceptance` | Id mal escrito o no declarado | Corregir el id; `recipe validate` lo detecta antes de correr |
+| `referencia desconocida: "X"` en `when`/`derived`/`acceptance` | Id mal escrito o no declarado | Corregir el id; `workflow validate` lo detecta antes de correr |
 | `referencia desconocida: "X"` en `when` de una etapa | El id existe, pero pertenece a una etapa posterior | Mover la etapa o quitar la dependencia; la validación semántica no mira el orden |
-| `la etapa "X" tiene un "when" inválido` | Expresión mal formada | Ver gramática en `docs/recipe-spec.md`; ids con guiones y resta con espacios |
-| `provider "X" no está configurado` | Alias inexistente | `m1 auth status` o revisar `providers` en `m1.config.json` |
+| `la etapa "X" tiene un "when" inválido` | Expresión mal formada | Ver gramática en `docs/workflow-spec.md`; ids con guiones y resta con espacios |
+| `provider "X" no está configurado` | Alias inexistente | `m1 provider list` o revisar `providers` en la config global |
 | `falta accountId de Cloudflare` / `falta API token` | Sin credenciales | Completar `.env` o `m1 auth set cf --token ... --account-id ...` |
 | `falta API key de TypeSafe` | Sin credenciales | `TYPESAFE_API_KEY` o `m1 auth set ts --token ...` |
 | `Cloudflare 401` / `403` | Token inválido o sin permiso de Workers AI | Regenerar token con el permiso correcto |
@@ -240,7 +261,7 @@ m1 local stop   --provider liquid   # lo apaga
 
 ## Comandos copy-paste
 
-> En el repo se usa `pnpm m1`; si instalaste globalmente (`npm link`), usá `m1`.
+> Si instalaste globalmente usá `m1`; si no, `npx --yes -p m1-agent m1`; dentro del repo, `pnpm m1`.
 
 ```bash
 # Descubrimiento
@@ -250,67 +271,84 @@ m1 --version
 m1 --help
 m1 run --help
 
+# Workflows
+m1 workflow list
+m1 workflow show copy-checker
+m1 workflow new mi-copy --from copy-checker --description "Copy para landing"
+m1 workflow validate mi-copy
+m1 workflow export mi-copy --out ./mi-copy.json
+m1 workflow import ./mi-copy.json --name mi-copy-2
+m1 workflow delete mi-copy --yes
+m1 workflow schema
+m1 workflow guide
+
+# Providers
+m1 provider presets
+m1 provider list
+m1 provider add cf --preset cloudflare --api-key <token> --account-id <id> --default
+m1 provider add local --preset llamacpp
+m1 provider edit local --model LiquidAI/d1-omni-600M-GGUF:Q8_0
+m1 provider test local
+m1 provider set-default local
+m1 provider remove local --yes
+
 # Servidor local
 m1 local status --provider liquid
 m1 local start  --provider liquid
+m1 local start  --provider liquid --download
 m1 local stop   --provider liquid
 
-# Ver la versión y la ayuda
-pnpm m1 --version
-pnpm m1 --help
-pnpm m1 run --help
+# Imprimir el JSON Schema del workflow
+m1 workflow schema
 
-# Imprimir el JSON Schema de la receta
-pnpm m1 recipe schema
-
-# Validar una receta
-pnpm m1 recipe validate examples/copy-checker.json
-pnpm m1 recipe validate ./mi-receta.json --json
+# Validar un workflow (por nombre o, en CI, por ruta)
+m1 workflow validate copy-checker
+m1 workflow validate ./mi-workflow.json --json
 
 # Diagnóstico del entorno
-pnpm m1 doctor
-pnpm m1 doctor --json
+m1 doctor
+m1 doctor --json
 
 # Ejecutar con texto
-pnpm m1 run examples/copy-checker.json --state "Empezá tu prueba gratis." --json
+m1 run copy-checker --slot copy --state "Empezá tu prueba gratis." --json
 
 # Ejecutar con archivo de texto
-pnpm m1 run examples/copy-checker.json --state-file ./copy.txt --json
+m1 run copy-checker --state-file ./copy.txt --json
 
 # Ejecutar con JSON de entrada
-pnpm m1 run examples/copy-checker.json --input ./entrada.json --json
+m1 run copy-checker --input ./entrada.json --json
 
 # Ejecutar con imagen (repetible)
-pnpm m1 run examples/ux-checker.json --image ./shots/home.png --image ./shots/mobile.png --state "brief" --json
+m1 run ux-checker --image ./shots/home.png --image ./shots/mobile.png --state "brief" --json
 
 # Ejecutar con datos por stdin (PowerShell)
-Get-Content ./entrada.json | pnpm m1 run examples/copy-checker.json --stdin --json
-# POSIX: cat ./entrada.json | pnpm m1 run examples/copy-checker.json --stdin --json
+Get-Content ./entrada.json | m1 run copy-checker --stdin --json
+# POSIX: cat ./entrada.json | m1 run copy-checker --stdin --json
 
 # Ver el request sin llamar al proveedor
-pnpm m1 run examples/copy-checker.json --state "texto" --print-request
+m1 run copy-checker --slot copy --state "texto" --print-request
 
 # Dry-run explícito
-pnpm m1 run examples/copy-checker.json --state "texto" --dry-run --trace
+m1 run copy-checker --slot copy --state "texto" --dry-run --trace
 
 # Forzar proveedor y modelo
-pnpm m1 run examples/copy-checker.json --state "texto" --provider mock --json
-pnpm m1 run examples/copy-checker.json --state "texto" --provider cf --model @cf/cloudflare/clef --json
+m1 run copy-checker --slot copy --state "texto" --provider mock --json
+m1 run copy-checker --slot copy --state "texto" --provider cf --model @cf/cloudflare/clef --json
 
 # Timeout por etapa
-pnpm m1 run examples/copy-checker.json --state "texto" --timeout 90000 --json
+m1 run copy-checker --slot copy --state "texto" --timeout 90000 --json
 
 # Salida compacta para consumo barato de otro LLM
-pnpm m1 run examples/copy-checker.json --state "texto" --compact
+m1 run copy-checker --slot copy --state "texto" --compact
 
 # Config alternativa
-pnpm m1 run examples/copy-checker.json --state "texto" -c ./m1.config.local.json --json
+m1 run copy-checker --slot copy --state "texto" -c ./m1.config.local.json --json
 
-# Credenciales
-pnpm m1 auth set cf --token <token> --account-id <account-id>
-pnpm m1 auth status
-pnpm m1 auth status --json
-pnpm m1 auth remove cf
+# Credenciales (equivalente a provider add/edit con --api-key)
+m1 auth set cf --token <token> --account-id <account-id>
+m1 auth status
+m1 auth status --json
+m1 auth remove cf
 ```
 
 ## Discrepancias detectadas

@@ -1,8 +1,8 @@
-import { readFile } from 'node:fs/promises';
-import { basename, isAbsolute, resolve } from 'node:path';
+import { basename } from 'node:path';
 import { M1Error } from '../../core/errors';
 import { runRecipe } from '../../core/engine';
 import { validateRecipe } from '../../core/validate';
+import { readWorkflowFile, resolveWorkflowPath } from '../../workflows/store';
 import { loadConfig, resolveProvider } from '../../config/config';
 import { resolveSecrets, loadCredentials } from '../../config/credentials';
 import { loadPreferences } from '../../config/preferences';
@@ -35,6 +35,8 @@ export interface RunFlags {
   timeout?: string;
   /** Política para levantar el modelo local: ask | always | never. */
   localStart?: string;
+  /** Permite descargar el modelo GGUF si falta, sin preguntar. */
+  download?: boolean;
 }
 
 function parseLocalPolicy(value: string | undefined): LocalAutoStart | undefined {
@@ -45,21 +47,14 @@ function parseLocalPolicy(value: string | undefined): LocalAutoStart | undefined
   });
 }
 
-async function loadRecipeFile(path: string) {
-  const abs = isAbsolute(path) ? path : resolve(process.cwd(), path);
-  let text: string;
-  try {
-    text = await readFile(abs, 'utf8');
-  } catch {
-    throw new M1Error('E_INPUT', `no se pudo leer la receta: ${abs}`, { hint: 'pasá la ruta a un archivo .json' });
-  }
-  let raw: unknown;
-  try {
-    raw = JSON.parse(text);
-  } catch (e) {
-    throw new M1Error('E_VALIDATION', `la receta no es JSON válido: ${abs}`, { hint: 'revisá comas y comillas', cause: e });
-  }
-  return validateRecipe(raw, { filePath: abs, defaultId: basename(abs).replace(/\.json$/i, '') });
+/**
+ * Acepta un nombre de workflow (`copy-checker`) o, como escape hatch para CI,
+ * una ruta a un `.json`. La resolución y la lectura viven en `workflows/store`.
+ */
+function loadWorkflow(ref: string) {
+  const path = resolveWorkflowPath(ref);
+  const raw = readWorkflowFile(path);
+  return validateRecipe(raw, { filePath: path, defaultId: basename(path).replace(/\.json$/i, '') });
 }
 
 const dryProvider: DecisionProvider = {
@@ -70,12 +65,12 @@ const dryProvider: DecisionProvider = {
   },
 };
 
-export async function runCommand(recipePath: string, flags: RunFlags): Promise<never> {
+export async function runCommand(workflowRef: string, flags: RunFlags): Promise<never> {
   const json = Boolean(flags.json);
   const dryRun = Boolean(flags.dryRun || flags.printRequest);
   const requests: unknown[] = [];
   try {
-    const { recipe, warnings } = await loadRecipeFile(recipePath);
+    const { recipe, warnings } = loadWorkflow(workflowRef);
     if (!json && warnings.length > 0) {
       for (const w of warnings) process.stderr.write(`  ! ${w}\n`);
     }
@@ -115,6 +110,7 @@ export async function runCommand(recipePath: string, flags: RunFlags): Promise<n
         alias,
         cfg: providerCfg,
         ...(localPolicy !== undefined ? { autoStart: localPolicy } : {}),
+        ...(flags.download !== undefined ? { download: flags.download } : {}),
         interactive: !json && Boolean(process.stdin.isTTY && process.stderr.isTTY),
         onStatus: (line) => {
           if (!json) process.stderr.write(`  … ${line}\n`);

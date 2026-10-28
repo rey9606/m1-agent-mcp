@@ -15,8 +15,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..', '..');
 const DIST_CLI = join(REPO, 'dist', 'cli', 'index.js');
-const COPY_RECIPE = join(REPO, 'examples', 'copy-checker.json');
-const UX_RECIPE = join(REPO, 'examples', 'ux-checker.json');
+const COPY_WORKFLOW = join(REPO, 'examples', 'copy-checker.json');
+const UX_WORKFLOW = join(REPO, 'examples', 'ux-checker.json');
 const MOCK_FIXTURES = join(REPO, 'fixtures', 'mock');
 
 /** PNG 1x1 válido (magic bytes + IHDR + IEND). */
@@ -94,11 +94,11 @@ describe('binario compilado (dist/cli/index.js)', () => {
     expect(existsSync(DIST_CLI)).toBe(true);
   });
 
-  it('--help lista run, recipe, auth y doctor', () => {
+  it('--help lista run, workflow, provider, auth y doctor', () => {
     const result = cli(['--help']);
 
     expect(result.status).toBe(0);
-    for (const command of ['run', 'recipe', 'auth', 'doctor']) {
+    for (const command of ['run', 'workflow', 'provider', 'auth', 'doctor']) {
       expect(result.stdout).toContain(command);
     }
   });
@@ -107,7 +107,7 @@ describe('binario compilado (dist/cli/index.js)', () => {
     const dir = makeTmp();
     const config = writeMockConfig(dir);
 
-    const result = cli(['run', COPY_RECIPE, '--provider', 'mock', '--state', 'texto', '--json', '-c', config]);
+    const result = cli(['run', COPY_WORKFLOW, '--provider', 'mock', '--state', 'texto', '--json', '-c', config]);
 
     expect(result.status).toBe(0);
     const out = JSON.parse(result.stdout) as {
@@ -121,15 +121,15 @@ describe('binario compilado (dist/cli/index.js)', () => {
     expect(result.stderr).toBe('');
   });
 
-  it('recipe schema --json incluye definitions.Recipe', () => {
-    const result = cli(['recipe', 'schema', '--json']);
+  it('workflow schema --json incluye definitions.Workflow', () => {
+    const result = cli(['workflow', 'schema', '--json']);
 
     expect(result.status).toBe(0);
     const schema = JSON.parse(result.stdout) as {
       definitions?: Record<string, { type?: string }>;
     };
-    expect(schema.definitions?.Recipe).toBeDefined();
-    expect(schema.definitions?.Recipe?.type).toBe('object');
+    expect(schema.definitions?.Workflow).toBeDefined();
+    expect(schema.definitions?.Workflow?.type).toBe('object');
   });
 
   it('--print-request incluye el modelo y la imagen en base64 con content_type', () => {
@@ -138,7 +138,7 @@ describe('binario compilado (dist/cli/index.js)', () => {
     const image = join(dir, 'pixel.png');
     writeFileSync(image, PNG_1X1);
 
-    const result = cli(['run', UX_RECIPE, '--image', image, '--print-request', '-c', config]);
+    const result = cli(['run', UX_WORKFLOW, '--image', image, '--print-request', '-c', config]);
 
     expect(result.status).toBe(0);
     const out = JSON.parse(result.stdout) as {

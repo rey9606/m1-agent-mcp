@@ -9,8 +9,8 @@ No hay capas separadas por configuración: `vitest.config.ts:6` incluye `tests/*
 | Capa | Archivos | Qué ejercita | Red |
 | --- | --- | --- | --- |
 | Unitarios | `tests/expr.test.ts`, `tests/template.test.ts`, `tests/normalize.test.ts`, `tests/intake.test.ts`, `tests/providers.test.ts`, `tests/config.test.ts`, `tests/local.test.ts`, `tests/engine.test.ts` | Importan módulos de `src/` y los prueban en el mismo proceso | Ninguna |
-| Contrato de ejemplos | `tests/examples.test.ts` | Valida las recetas de `examples/`, sus invariantes semánticas, los requests del dry-run y los veredictos con `fixtures/mock/answers.json` | Ninguna |
-| Tooling | `tests/tooling/precommit.test.ts` | Ejecuta `scripts/precommit-guards.mjs` en repos git temporales y `scripts/validate-recipes.mjs` contra recetas temporales | Ninguna (git local) |
+| Contrato de ejemplos | `tests/examples.test.ts` | Valida los workflows de `examples/`, sus invariantes semánticas, los requests del dry-run y los veredictos con `fixtures/mock/answers.json` | Ninguna |
+| Tooling | `tests/tooling/precommit.test.ts` | Ejecuta `scripts/precommit-guards.mjs` en repos git temporales y `scripts/validate-workflows.mjs` contra workflows temporales | Ninguna (git local) |
 | E2E de CLI | `tests/cli.test.ts` | Spawnea la CLI real (`node node_modules/tsx/dist/cli.mjs src/cli/index.ts`) contra configs temporales con provider `mock` | Ninguna |
 | Integración HTTP | `tests/integration/systemone.test.ts` | Corre la CLI completa contra un `http.Server` local en `127.0.0.1` con el provider `systemone` real | Loopback |
 | Live opt-in | `tests/integration/cloudflare.live.test.ts` y `tests/integration/openrouter.live.test.ts` | Llaman a Cloudflare Workers AI y a OpenRouter de verdad | Internet + credenciales |
@@ -21,7 +21,7 @@ En orden de costo:
 live (Cloudflare real, opt-in)
   integración HTTP (servidor local, provider systemone)
     e2e de CLI (proceso real, provider mock)
-      tooling (guardas y validación de recetas)
+      tooling (guardas y validación de workflows)
         unitarios y contrato de ejemplos (in-process)
 ```
 
@@ -164,11 +164,11 @@ Alcance real: los archivos borrados se ignoran (filtro `ACMR`), los binarios só
 | --- | --- |
 | `*.{ts,mts,cts}` | `eslint --fix` y después `vitest related --run --passWithNoTests` |
 | `*.{ts,mts,cts,js,mjs,cjs,json,md,yml,yaml,sh,txt,example}` | `secretlint` (preset recomendado, ver `.secretlintrc.json`) |
-| `examples/*.json` | `node scripts/validate-recipes.mjs` con esos archivos |
+| `examples/*.json` | `node scripts/validate-workflows.mjs` con esos archivos |
 
 `secretlint` es la barrera principal de secretos; el regex de los guards queda como defensa en profundidad. Respeta `.gitignore`, así que un archivo forzado con `git add -f` podría quedar fuera de su alcance (los guards cubren `.env` y credenciales).
 
-`validate-recipes.mjs` corre `m1 recipe validate` con `tsx` por cada receta recibida. Ojo: sólo se validan recetas que estén en `examples/`; una receta nueva en otra carpeta no se valida en el hook.
+`validate-workflows.mjs` corre `m1 workflow validate <ruta>` con `tsx` por cada archivo recibido. Ojo: sólo se validan los JSON que estén en `examples/`; un workflow nuevo en otra carpeta no se valida en el hook.
 
 ### Paso 3: typecheck condicional
 
@@ -212,7 +212,7 @@ Sin upstream configurado no rompe: omite el audit y corre la suite.
 
 - No corren `pnpm build`.
 - No corren tests live (`M1_LIVE=1`).
-- No validan recetas fuera de `examples/*.json`.
+- No validan workflows fuera de `examples/*.json`.
 - No hay CI: los hooks locales son la única barrera.
 
 ### Saltearlo
@@ -224,7 +224,7 @@ Sin upstream configurado no rompe: omite el audit y corre la suite.
 | Falla en | Reproducir | Qué mirar |
 | --- | --- | --- |
 | Guardas | `node scripts/precommit-guards.mjs` (con los archivos ya staged) | El mensaje indica archivo y motivo. Si es un token de prueba, reemplazalo por un placeholder; si es un archivo grande, no debería versionarse |
-| `recipe validate` | `pnpm m1 recipe validate examples/copy-checker.json` | Error de esquema o regla semántica; el mismo validador que usa el hook |
+| `workflow validate` | `m1 workflow validate copy-checker` | Error de esquema o regla semántica; el mismo validador que usa el hook |
 | Tests relacionados | `pnpm exec vitest related --run <archivos staged>` o `pnpm exec vitest run <test>` | Corré el test puntual con `-t` para aislar el caso |
 | Typecheck | `pnpm typecheck` | Corregir el error de tipos; el hook no acepta warnings de `tsc` |
 
@@ -265,7 +265,7 @@ Elegí la capa según lo que querés probar:
 | Qué probás | Dónde | Cómo |
 | --- | --- | --- |
 | Una función o módulo de `src/` | `tests/<área>.test.ts` | Importás el módulo y lo ejercitás en proceso |
-| Una receta o el contrato de los ejemplos | `tests/examples.test.ts` | Cargás la receta, validás invariantes y, si hace falta, capturás requests del dry-run |
+| Un workflow o el contrato de los ejemplos | `tests/examples.test.ts` | Cargás el workflow, validás invariantes y, si hace falta, capturás requests del dry-run |
 | Un script de tooling | `tests/tooling/*.test.ts` | `spawnSync` del script, con repo o directorio temporal |
 | La CLI de punta a punta | `tests/cli.test.ts` | Usás el helper `cli()` con una config `mock` en un directorio temporal |
 | Un provider por HTTP | `tests/integration/<provider>.test.ts` | Levantás un `http.Server` en el puerto 0 y corrés la CLI contra él |

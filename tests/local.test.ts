@@ -1,11 +1,11 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer as createHttpServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { M1Error } from '../src/core/errors.js';
 import {
@@ -151,6 +151,76 @@ describe('buildLaunchSpec', () => {
     );
 
     expect(spec.args).toEqual(['--listen', '127.0.0.1:9999']);
+  });
+
+  it('agrega -hf cuando el modelo de HF viene de provider.model', () => {
+    const spec = buildLaunchSpec(
+      localCfg(9931, {
+        model: 'LiquidAI/d1-2B-GGUF:Q8_0',
+        launch: { command: 'llama-server', args: ['-b', '8192'], port: 9931 },
+      }),
+      { port: 9931, host: '127.0.0.1' },
+    );
+
+    expect(spec.args).toEqual([
+      '-b',
+      '8192',
+      '-hf',
+      'LiquidAI/d1-2B-GGUF:Q8_0',
+      '--port',
+      '9931',
+      '--host',
+      '127.0.0.1',
+      '--alias',
+      'LiquidAI/d1-2B-GGUF:Q8_0',
+    ]);
+  });
+
+  it('no duplica el modelo cuando launch.args ya lo elige', () => {
+    const spec = buildLaunchSpec(
+      localCfg(9931, {
+        model: 'LiquidAI/otro-GGUF:Q4_K_M',
+        launch: { command: 'llama-server', args: ['-m', 'C:/models/x.gguf'], port: 9931 },
+      }),
+      { port: 9931, host: '127.0.0.1' },
+    );
+
+    expect(spec.args.filter((arg) => arg === '-m' || arg === '-hf')).toEqual(['-m']);
+    expect(spec.args).not.toContain('-hf');
+  });
+
+  it('agrega --mmproj de launch.mmproj sin duplicarlo', () => {
+    const withMmproj = buildLaunchSpec(
+      localCfg(9931, {
+        model: 'LiquidAI/d1-omni-600M-GGUF:Q8_0',
+        launch: {
+          command: 'llama-server',
+          args: [],
+          port: 9931,
+          mmproj: 'C:/models/mmproj.gguf',
+        },
+      }),
+      { port: 9931, host: '127.0.0.1' },
+    );
+    expect(withMmproj.args).toContain('--mmproj');
+    expect(withMmproj.args[withMmproj.args.indexOf('--mmproj') + 1]).toBe('C:/models/mmproj.gguf');
+    expect(withMmproj.args.filter((arg) => arg === '--mmproj')).toHaveLength(1);
+
+    const explicit = buildLaunchSpec(
+      localCfg(9931, {
+        model: 'LiquidAI/d1-omni-600M-GGUF:Q8_0',
+        launch: {
+          command: 'llama-server',
+          args: ['--mmproj', 'D:/otro/mmproj.gguf'],
+          port: 9931,
+          mmproj: 'C:/models/mmproj.gguf',
+        },
+      }),
+      { port: 9931, host: '127.0.0.1' },
+    );
+    expect(explicit.args.filter((arg) => arg === '--mmproj')).toHaveLength(1);
+    expect(explicit.args).toContain('D:/otro/mmproj.gguf');
+    expect(explicit.args).not.toContain('C:/models/mmproj.gguf');
   });
 });
 
@@ -406,6 +476,146 @@ describe('ensureLocalEndpoint', () => {
     expect(result.baseUrl).toBe('http://127.0.0.1:9940/v1/systemone');
     expect(result.warnings[0]).toContain('reutilizando');
     expect(runtime.spawnServer).not.toHaveBeenCalled();
+  });
+});
+
+describe('descarga del modelo HF', () => {
+  const previousCacheDir = process.env.M1_HF_CACHE_DIR;
+
+  beforeEach(() => {
+    process.env.M1_HF_CACHE_DIR = makeStateDir();
+  });
+
+  afterEach(() => {
+    if (previousCacheDir === undefined) delete process.env.M1_HF_CACHE_DIR;
+    else process.env.M1_HF_CACHE_DIR = previousCacheDir;
+  });
+
+  const hfCfg = (): ProviderConfig =>
+    localCfg(9931, {
+      model: 'LiquidAI/d1-2B-GGUF:Q8_0',
+      launch: { command: 'llama-server', args: [], port: 9931 },
+    });
+
+  function readyRuntime(overrides: Partial<LocalRuntime> = {}): LocalRuntime {
+    let started = false;
+    return fakeRuntime({
+      spawnServer: vi.fn(() => {
+        started = true;
+        return { pid: 4242, exitCode: null, kill: vi.fn() };
+      }),
+      probe: vi.fn(async () =>
+        started ? { state: 'running' as const } : { state: 'down' as const },
+      ),
+      ...overrides,
+    });
+  }
+
+  it('sin TTY falla con el comando exacto en vez de descargar', async () => {
+    const runtime = fakeRuntime();
+
+    const error = await ensureLocalEndpoint({
+      alias: 'liquid',
+      cfg: hfCfg(),
+      interactive: false,
+      stateDir: makeStateDir(),
+      runtime,
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(M1Error);
+    expect((error as M1Error).code).toBe('E_PROVIDER');
+    expect((error as M1Error).message).toContain('LiquidAI/d1-2B-GGUF:Q8_0');
+    expect((error as M1Error).hint).toBe('m1 local start --provider liquid --download');
+    expect((error as M1Error).details).toMatchObject({
+      model: 'LiquidAI/d1-2B-GGUF:Q8_0',
+    });
+    expect(runtime.confirm).not.toHaveBeenCalled();
+    expect(runtime.spawnServer).not.toHaveBeenCalled();
+  });
+
+  it('con download arranca y deja que llama-server baje el GGUF', async () => {
+    const runtime = readyRuntime();
+
+    const result = await ensureLocalEndpoint({
+      alias: 'liquid',
+      cfg: hfCfg(),
+      interactive: false,
+      download: true,
+      stateDir: makeStateDir(),
+      runtime,
+    });
+
+    expect(result.started).toBe(true);
+    expect(runtime.confirm).not.toHaveBeenCalled();
+    expect(runtime.spawnServer).toHaveBeenCalledOnce();
+    const spec = (runtime.spawnServer as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
+      args: string[];
+    };
+    expect(spec.args).toContain('-hf');
+    expect(spec.args).toContain('LiquidAI/d1-2B-GGUF:Q8_0');
+  });
+
+  it('en TTY el rechazo cancela con el hint de --download', async () => {
+    const runtime = fakeRuntime({ confirm: vi.fn(async () => false) });
+
+    const error = await ensureLocalEndpoint({
+      alias: 'liquid',
+      cfg: hfCfg(),
+      interactive: true,
+      stateDir: makeStateDir(),
+      runtime,
+    }).catch((e: unknown) => e);
+
+    expect((error as M1Error).code).toBe('E_PROVIDER');
+    expect((error as M1Error).message).toBe('descarga cancelada');
+    expect((error as M1Error).hint).toContain('m1 local start --provider liquid --download');
+    expect(runtime.confirm).toHaveBeenCalledOnce();
+    expect(runtime.spawnServer).not.toHaveBeenCalled();
+  });
+
+  it('en TTY la aceptación sigue y arranca', async () => {
+    const runtime = readyRuntime({ confirm: vi.fn(async () => true) });
+
+    const result = await ensureLocalEndpoint({
+      alias: 'liquid',
+      cfg: hfCfg(),
+      interactive: true,
+      stateDir: makeStateDir(),
+      runtime,
+    });
+
+    expect(result.started).toBe(true);
+    expect(runtime.confirm).toHaveBeenCalledOnce();
+    expect(runtime.spawnServer).toHaveBeenCalledOnce();
+  });
+
+  it('si el modelo ya está en la caché no pregunta', async () => {
+    const snapshot = join(
+      process.env.M1_HF_CACHE_DIR!,
+      'models--LiquidAI--d1-2B-GGUF',
+      'snapshots',
+      'sha',
+    );
+    mkdirSync(snapshot, { recursive: true });
+    writeFileSync(join(snapshot, 'd1-2B-Q8_0.gguf'), 'gguf');
+
+    const runtime = readyRuntime();
+    const result = await ensureLocalEndpoint({
+      alias: 'liquid',
+      cfg: hfCfg(),
+      interactive: true,
+      stateDir: makeStateDir(),
+      runtime,
+    });
+
+    expect(result.started).toBe(true);
+    expect(runtime.confirm).not.toHaveBeenCalled();
+    expect(result.model).toEqual({
+      mode: 'hf',
+      spec: 'LiquidAI/d1-2B-GGUF:Q8_0',
+      present: true,
+      path: join(snapshot, 'd1-2B-Q8_0.gguf'),
+    });
   });
 });
 

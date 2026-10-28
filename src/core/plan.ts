@@ -19,7 +19,7 @@ export function planStages(recipe: ResolvedRecipe): PlannedStage[] {
       const criterion = byId.get(id);
       if (!criterion) {
         throw new M1Error('E_VALIDATION', `la etapa "${stage.id}" pregunta un criterio inexistente: "${id}"`, {
-          hint: 'validá la receta con validateRecipe antes de planificar',
+          hint: 'validá el workflow con `m1 workflow validate` antes de planificar',
         });
       }
       return criterion;

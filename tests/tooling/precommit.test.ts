@@ -11,7 +11,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const GUARDS = join(REPO_ROOT, 'scripts', 'precommit-guards.mjs');
-const VALIDATE_RECIPES = join(REPO_ROOT, 'scripts', 'validate-recipes.mjs');
+const VALIDATE_RECIPES = join(REPO_ROOT, 'scripts', 'validate-workflows.mjs');
 
 const tempDirs: string[] = [];
 
@@ -56,7 +56,7 @@ function runGuards(repoDir: string) {
   return spawnSync(process.execPath, [GUARDS], { cwd: repoDir, encoding: 'utf8' });
 }
 
-/** Ejecuta validate-recipes con cwd = repo real (resuelve tsx y el CLI desde ahí). */
+/** Ejecuta validate-workflows con cwd = repo real (resuelve tsx y el CLI desde ahí). */
 function runValidate(...files: string[]) {
   return spawnSync(process.execPath, [VALIDATE_RECIPES, ...files], {
     cwd: REPO_ROOT,
@@ -316,10 +316,10 @@ describe('precommit-guards: higiene del índice', () => {
 });
 
 // ---------------------------------------------------------------------------
-// validate-recipes.mjs
+// validate-workflows.mjs
 // ---------------------------------------------------------------------------
 
-describe('validate-recipes', () => {
+describe('validate-workflows', () => {
   it('sale 0 con una receta válida en un directorio temporal', () => {
     const dir = makeTempDir();
     const recipePath = join(dir, 'valid.json');
@@ -329,7 +329,7 @@ describe('validate-recipes', () => {
     const result = runValidate(recipePath);
 
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toContain('recipe validate');
+    expect(result.stdout).toContain('workflow validate');
   }, 60_000);
 
   it('sale != 0 con JSON inválido', () => {

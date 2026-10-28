@@ -15,8 +15,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
 const TSX_CLI = join(REPO, 'node_modules', 'tsx', 'dist', 'cli.mjs');
 
-const COPY_RECIPE = join(REPO, 'examples', 'copy-checker.json');
-const UX_RECIPE = join(REPO, 'examples', 'ux-checker.json');
+const COPY_WORKFLOW = join(REPO, 'examples', 'copy-checker.json');
+const UX_WORKFLOW = join(REPO, 'examples', 'ux-checker.json');
 
 /** PNG 1x1 válido (magic bytes + IHDR + IEND). */
 const PNG_1X1 = Buffer.from(
@@ -90,10 +90,10 @@ interface CliResult {
   stderr: string;
 }
 
-function cli(args: string[], opts: { cwd?: string; input?: string } = {}): CliResult {
+function cli(args: string[], opts: { cwd?: string; input?: string; env?: Record<string, string> } = {}): CliResult {
   const result = spawnSync(process.execPath, [TSX_CLI, join(REPO, 'src', 'cli', 'index.ts'), ...args], {
     cwd: opts.cwd ?? REPO,
-    env: { ...process.env, NO_COLOR: '1' },
+    env: { ...process.env, NO_COLOR: '1', ...opts.env },
     encoding: 'utf8',
     input: opts.input,
   });
@@ -115,7 +115,7 @@ describe('m1 run', () => {
     const dir = makeTmp();
     const config = writeMockConfig(dir, { fixtures: COPY_FIXTURES });
 
-    const result = cli(['run', COPY_RECIPE, '--state', 'texto', '--json', '-c', config]);
+    const result = cli(['run', COPY_WORKFLOW, '--state', 'texto', '--json', '-c', config]);
 
     expect(result.status).toBe(0);
     const out = JSON.parse(result.stdout) as {
@@ -129,7 +129,22 @@ describe('m1 run', () => {
     expect(result.stderr).toBe('');
   });
 
-  it('usa recipe.provider cuando no se pasa --provider', () => {
+  it('resuelve el workflow por nombre, sin ruta', () => {
+    const dir = makeTmp();
+    const config = writeMockConfig(dir, { fixtures: COPY_FIXTURES });
+    const sinWorkflowsDeUsuario = makeTmp();
+
+    const result = cli(['run', 'copy-checker', '--state', 'texto', '--json', '-c', config], {
+      env: { M1_WORKFLOWS_DIR: sinWorkflowsDeUsuario },
+    });
+
+    expect(result.status).toBe(0);
+    const out = JSON.parse(result.stdout) as { verdict: string; agent: { id: string } };
+    expect(out.verdict).toBe('pass');
+    expect(out.agent.id).toBe('copy-checker');
+  });
+
+  it('usa el provider del workflow cuando no se pasa --provider', () => {
     const dir = makeTmp();
     const config = join(dir, 'm1.config.json');
     writeFileSync(
@@ -139,7 +154,7 @@ describe('m1 run', () => {
         providers: { mock: { kind: 'mock' }, alt: { kind: 'mock' } },
       }),
     );
-    const recipe = writeJson(dir, 'alt-recipe.json', {
+    const workflow = writeJson(dir, 'alt-workflow.json', {
       id: 'alt',
       role: 'tester',
       provider: 'alt',
@@ -148,7 +163,7 @@ describe('m1 run', () => {
       stages: [{ id: 's1', questions: ['a'] }],
     });
 
-    const result = cli(['run', recipe, '--state', 'texto', '--json', '-c', config]);
+    const result = cli(['run', workflow, '--state', 'texto', '--json', '-c', config]);
 
     expect(result.status).toBe(0);
     const out = JSON.parse(result.stdout) as { meta: { provider: string } };
@@ -159,7 +174,7 @@ describe('m1 run', () => {
     const dir = makeTmp();
     const config = writeMockConfig(dir, { fixtures: COPY_FIXTURES });
 
-    const result = cli(['run', COPY_RECIPE, '--state', 'texto', '--compact', '-c', config]);
+    const result = cli(['run', COPY_WORKFLOW, '--state', 'texto', '--compact', '-c', config]);
 
     expect(result.status).toBe(0);
     const lines = result.stdout.trimEnd().split('\n');
@@ -171,7 +186,7 @@ describe('m1 run', () => {
     const dir = makeTmp();
     const config = writeMockConfig(dir, { fixtures: COPY_FIXTURES });
 
-    const result = cli(['run', COPY_RECIPE, '--state', 'texto', '-c', config]);
+    const result = cli(['run', COPY_WORKFLOW, '--state', 'texto', '-c', config]);
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('score:');
@@ -184,7 +199,7 @@ describe('m1 run', () => {
     const stateFile = join(dir, 'copy.txt');
     writeFileSync(stateFile, 'un texto de prueba');
 
-    const result = cli(['run', COPY_RECIPE, '--state-file', stateFile, '--json', '-c', config]);
+    const result = cli(['run', COPY_WORKFLOW, '--state-file', stateFile, '--json', '-c', config]);
 
     expect(result.status).toBe(0);
     const out = JSON.parse(result.stdout) as { verdict: string; meta: { calls: number } };
@@ -196,7 +211,7 @@ describe('m1 run', () => {
     const dir = makeTmp();
     const config = writeMockConfig(dir, { fixtures: COPY_FIXTURES });
 
-    const result = cli(['run', COPY_RECIPE, '--stdin', '--json', '-c', config], {
+    const result = cli(['run', COPY_WORKFLOW, '--stdin', '--json', '-c', config], {
       input: JSON.stringify({ copy: 'texto por stdin' }),
     });
 
@@ -212,7 +227,7 @@ describe('m1 run', () => {
     const image = join(dir, 'pixel.png');
     writeFileSync(image, PNG_1X1);
 
-    const result = cli(['run', UX_RECIPE, '--image', image, '--json', '-c', config]);
+    const result = cli(['run', UX_WORKFLOW, '--image', image, '--json', '-c', config]);
 
     expect(result.status).toBe(0);
     const out = JSON.parse(result.stdout) as { verdict: string; meta: { calls: number } };
@@ -225,7 +240,7 @@ describe('m1 run', () => {
     const config = writeMockConfig(dir);
     writeFileSync(join(dir, 'pixel.png'), PNG_1X1);
 
-    const copy = cli(['run', COPY_RECIPE, '--state', 'texto', '--print-request', '-c', config]);
+    const copy = cli(['run', COPY_WORKFLOW, '--state', 'texto', '--print-request', '-c', config]);
     expect(copy.status).toBe(0);
     const copyOut = JSON.parse(copy.stdout) as {
       ok: boolean;
@@ -241,7 +256,7 @@ describe('m1 run', () => {
 
     const ux = cli([
       'run',
-      UX_RECIPE,
+      UX_WORKFLOW,
       '--image',
       join(dir, 'pixel.png'),
       '--print-request',
@@ -258,7 +273,7 @@ describe('m1 run', () => {
     const dir = makeTmp();
     const config = writeMockConfig(dir);
 
-    const result = cli(['run', COPY_RECIPE, '--state', 'texto', '--dry-run', '--json', '-c', config]);
+    const result = cli(['run', COPY_WORKFLOW, '--state', 'texto', '--dry-run', '--json', '-c', config]);
 
     expect(result.status).toBe(0);
     const out = JSON.parse(result.stdout) as { meta: { dryRun: boolean; calls: number } };
@@ -268,7 +283,7 @@ describe('m1 run', () => {
 });
 
 describe('m1 run: errores de entrada y validación', () => {
-  it('receta con JSON roto → exit 2 / E_VALIDATION', () => {
+  it('workflow con JSON roto → exit 2 / E_VALIDATION', () => {
     const dir = makeTmp();
     const config = writeMockConfig(dir);
     const broken = join(dir, 'broken.json');
@@ -283,7 +298,7 @@ describe('m1 run: errores de entrada y validación', () => {
   it('criterio duplicado → exit 2 / E_VALIDATION con details.path', () => {
     const dir = makeTmp();
     const config = writeMockConfig(dir);
-    const recipe = writeJson(dir, 'dup.json', {
+    const workflow = writeJson(dir, 'dup.json', {
       id: 'dup',
       role: 'prueba',
       criteria: [
@@ -293,7 +308,7 @@ describe('m1 run: errores de entrada y validación', () => {
       stages: [{ id: 'base', questions: ['C1'] }],
     });
 
-    const result = cli(['run', recipe, '--state', 'texto', '--json', '-c', config]);
+    const result = cli(['run', workflow, '--state', 'texto', '--json', '-c', config]);
 
     expect(result.status).toBe(2);
     const error = errorOf(result);
@@ -308,7 +323,7 @@ describe('m1 run: errores de entrada y validación', () => {
 
     const result = cli([
       'run',
-      COPY_RECIPE,
+      COPY_WORKFLOW,
       '--input',
       join(dir, 'no-existe.json'),
       '--json',
@@ -325,7 +340,7 @@ describe('m1 run: errores de entrada y validación', () => {
     const config = writeMockConfig(dir);
     const input = writeJson(dir, 'input.json', { brief: 'sólo el brief, falta copy' });
 
-    const result = cli(['run', COPY_RECIPE, '--input', input, '--json', '-c', config]);
+    const result = cli(['run', COPY_WORKFLOW, '--input', input, '--json', '-c', config]);
 
     expect(result.status).toBe(2);
     const error = errorOf(result);
@@ -336,7 +351,7 @@ describe('m1 run: errores de entrada y validación', () => {
   it('fail del motor → exit 1 (noul negative con passAt alto)', () => {
     const dir = makeTmp();
     const config = writeMockConfig(dir);
-    const recipe = writeJson(dir, 'always-fail.json', {
+    const workflow = writeJson(dir, 'always-fail.json', {
       id: 'always-fail',
       role: 'prueba',
       input: { slots: { texto: { type: 'text', required: true } } },
@@ -353,7 +368,7 @@ describe('m1 run: errores de entrada y validación', () => {
       stages: [{ id: 'base', questions: ['N1'] }],
     });
 
-    const result = cli(['run', recipe, '--state', 'texto', '--json', '-c', config]);
+    const result = cli(['run', workflow, '--state', 'texto', '--json', '-c', config]);
 
     // mock sintetiza noul=0.82 → polarity negative → 0.18 < 0.99
     expect(result.status).toBe(1);
@@ -368,7 +383,7 @@ describe('m1 run: errores de entrada y validación', () => {
   it('blocker con confianza baja → exit 3 / needs_review', () => {
     const dir = makeTmp();
     const config = writeMockConfig(dir);
-    const recipe = writeJson(dir, 'review.json', {
+    const workflow = writeJson(dir, 'review.json', {
       id: 'review',
       role: 'prueba',
       input: { slots: { texto: { type: 'text', required: true } } },
@@ -386,7 +401,7 @@ describe('m1 run: errores de entrada y validación', () => {
       limits: { minConfidence: 0.9 },
     });
 
-    const result = cli(['run', recipe, '--state', 'texto', '--json', '-c', config]);
+    const result = cli(['run', workflow, '--state', 'texto', '--json', '-c', config]);
 
     // mock sintetiza score=1 (0.5 normalizado) con confidence 0.66 < 0.9
     expect(result.status).toBe(3);
@@ -395,25 +410,25 @@ describe('m1 run: errores de entrada y validación', () => {
   });
 });
 
-describe('m1 recipe / doctor', () => {
-  it('recipe validate acepta examples/ux-checker.json', () => {
-    const result = cli(['recipe', 'validate', UX_RECIPE, '--json']);
+describe('m1 workflow / doctor', () => {
+  it('workflow validate acepta el built-in ux-checker por nombre', () => {
+    const result = cli(['workflow', 'validate', 'ux-checker', '--json']);
 
     expect(result.status).toBe(0);
-    const out = JSON.parse(result.stdout) as { ok: boolean; id: string };
+    const out = JSON.parse(result.stdout) as { ok: boolean; name: string };
     expect(out.ok).toBe(true);
-    expect(out.id).toBe('ux-checker');
+    expect(out.name).toBe('ux-checker');
   });
 
-  it('recipe schema imprime un JSON Schema con definitions.Recipe', () => {
-    const result = cli(['recipe', 'schema', '--json']);
+  it('workflow schema imprime un JSON Schema con definitions.Workflow', () => {
+    const result = cli(['workflow', 'schema', '--json']);
 
     expect(result.status).toBe(0);
     const schema = JSON.parse(result.stdout) as {
       definitions?: Record<string, { type?: string }>;
     };
-    expect(schema.definitions?.Recipe).toBeDefined();
-    expect(schema.definitions?.Recipe?.type).toBe('object');
+    expect(schema.definitions?.Workflow).toBeDefined();
+    expect(schema.definitions?.Workflow?.type).toBe('object');
   });
 
   it('doctor --json con config mock termina en 0 e incluye el alias', () => {

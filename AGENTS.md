@@ -2,11 +2,11 @@
 
 Esta es la guía que un agente debe leer antes de usar la CLI. La fuente de
 verdad siempre es la propia CLI: `m1 guide --json`, `m1 <comando> --help` y
-`m1 recipe schema`.
+`m1 workflow schema`.
 
 ## Qué es (y qué no)
 
-`m1` ejecuta **recetas JSON** de evaluación contra un modelo. Cada receta
+`m1` ejecuta **workflows JSON** de evaluación contra un modelo. Cada workflow
 declara preguntas tipadas sobre un `state`:
 
 | tipo    | respuesta              | uso                                   |
@@ -18,7 +18,7 @@ declara preguntas tipadas sobre un `state`:
 Devuelve respuestas normalizadas, `verdict`, `score`, `issues` y `remediation`.
 
 **No es un generador de texto.** No le pidas "escribí un párrafo" ni "resumí
-esto": la salida es estructurada y acotada por la receta.
+esto": la salida es estructurada y acotada por el workflow.
 
 ## Reglas de oro
 
@@ -33,6 +33,7 @@ esto": la salida es estructurada y acotada por la receta.
    providers.
 7. Para imágenes locales subí `--timeout 300000` (el costo real es
    `preguntas × re-codificación de la imagen`).
+8. Los workflows se piden **sólo por nombre** (`copy-checker`), nunca por ruta.
 
 ## Descubrimiento
 
@@ -41,11 +42,11 @@ m1 guide                 # tutorial completo en texto
 m1 guide --json          # mismo contenido, estructurado
 m1 --help                # comandos y contrato
 m1 <comando> --help      # opciones y argumentos exactos
-m1 recipe schema         # JSON Schema de recetas
+m1 workflow schema       # JSON Schema de workflows
 m1 --version             # 0.1.0
 ```
 
-Manual extendido (construir entradas, escribir recetas, errores comunes):
+Manual extendido (construir entradas, escribir workflows, errores comunes):
 [docs/for-agents.md](docs/for-agents.md).
 
 `m1 guide --json` devuelve:
@@ -54,11 +55,20 @@ Manual extendido (construir entradas, escribir recetas, errores comunes):
 { "ok": true, "version": "0.1.0", "sections": [{ "id": "...", "title": "...", "body": "...", "commands": ["..."] }] }
 ```
 
+## Instalación
+
+```bash
+npx --yes m1-agent@latest workflow list     # sin instalar
+npx --yes -p m1-agent m1 workflow list      # el bin corto
+npm install -g m1-agent                     # o global
+```
+
 ## Flujo mínimo
 
 ```bash
 m1 doctor --json
-m1 run examples/copy-checker.json --state "texto a evaluar" --json
+m1 workflow list
+m1 run copy-checker --slot copy --state "texto a evaluar" --json
 # exit 0 → pass | 1 → fail (leé issues[].remediation)
 #          2 → error (leé error.code/hint)
 #          3 → needs_review
@@ -68,9 +78,12 @@ m1 run examples/copy-checker.json --state "texto a evaluar" --json
 
 | comando                                   | para qué                                              |
 | ----------------------------------------- | ----------------------------------------------------- |
-| `m1 run <receta>`                         | ejecuta la receta sobre un trabajo                    |
-| `m1 recipe validate <archivo>`            | valida una receta sin ejecutarla                      |
-| `m1 recipe schema`                        | imprime el JSON Schema                                |
+| `m1 run <workflow>`                       | ejecuta el workflow sobre un trabajo                  |
+| `m1 workflow list\|show\|new\|import\|export\|edit\|delete` | administra workflows (los built-in son de sólo lectura) |
+| `m1 workflow validate <nombre>`           | valida un workflow sin ejecutarlo                     |
+| `m1 workflow schema`                      | imprime el JSON Schema                                |
+| `m1 workflow guide`                       | guía de autoría con esqueleto                         |
+| `m1 provider list\|presets\|show\|add\|edit\|remove\|set-default\|test` | administra providers (siempre global) |
 | `m1 models [--search X] [--free]`         | catálogo de modelos del provider                      |
 | `m1 model show\|use\|reset`               | modelo efectivo / fijarlo / borrar preferencia        |
 | `m1 local start\|status\|stop`            | ciclo de vida del servidor local                      |
@@ -80,6 +93,26 @@ m1 run examples/copy-checker.json --state "texto a evaluar" --json
 
 Todos aceptan `--json`; `run`, `models`, `model`, `local` y `doctor` aceptan
 `-c/--config <archivo>`.
+
+## Workflows
+
+- **Built-in** (de sólo lectura): `copy-checker`, `ux-checker`.
+- **De usuario**: `~/.config/m1-agent/workflows/<nombre>.json`
+  (override: `M1_WORKFLOWS_DIR`).
+- Nombres: `^[a-z0-9][a-z0-9-]{0,63}$`. Un workflow de usuario pisa al built-in
+  homónimo.
+- Crear: `m1 workflow new mi-copy --from copy-checker --description "..."`.
+- Para CI se acepta una ruta `.json` como escape hatch, pero no es la norma.
+
+## Providers
+
+- Se escriben **siempre** en la config global
+  (`~/.config/m1-agent/config.json`); las API keys van a
+  `~/.config/m1-agent/credentials.json` (modo 0600).
+- Presets: `cloudflare`, `openrouter`, `typesafe`, `llamacpp`, `custom`.
+- `m1 provider add local --preset llamacpp` crea un provider **sin modelo**: el
+  modelo se elige con `m1 provider edit local --model <repo:quant | ruta.gguf>`.
+- Ningún comando imprime secretos.
 
 ## Entrada de `run`
 
@@ -92,9 +125,10 @@ Todos aceptan `--json`; `run`, `models`, `model`, `local` y `doctor` aceptan
 | `--slot <nombre>`          | slot destino de `--state`/`--state-file`             |
 | `--image <ruta>`           | imagen (repetible)                                   |
 | `--image-slot <nombre>`    | slot destino de `--image`                            |
-| `--provider <alias>`       | override del provider de la receta/config            |
+| `--provider <alias>`       | override del provider del workflow/config            |
 | `--model <id>`             | override del modelo                                  |
 | `--timeout <ms>`           | timeout por etapa                                    |
+| `--download`               | permite bajar el GGUF local sin preguntar            |
 
 ## Salida de `run --json`
 
@@ -151,12 +185,12 @@ Con `--json`:
 | code          | causa típica                            | recuperación                                       |
 | ------------- | --------------------------------------- | -------------------------------------------------- |
 | `E_USAGE`     | comando/flag inválido o faltante        | `m1 <comando> --help`; la CLI sugiere el flag correcto |
-| `E_VALIDATION`| receta fuera del schema                 | `m1 recipe validate <archivo>`; mirá `details`      |
+| `E_VALIDATION`| workflow fuera del schema               | `m1 workflow validate <nombre>`; mirá `details`     |
 | `E_INPUT`     | falta un slot o una imagen              | revisá `--state` / `--input` / `--image`            |
 | `E_CONFIG`    | config o provider mal definidos         | `m1 doctor --json`; revisá `-c` y `--provider`      |
 | `E_PROVIDER`  | el endpoint rechazó la llamada          | leé `hint` y `details`; no reintentes igual         |
 | `E_TIMEOUT`   | la etapa superó el timeout              | subí `--timeout` (multimodal local: `300000`)       |
-| `E_EXPR`      | expresión de aceptación inválida        | revisá `acceptance` en la receta                    |
+| `E_EXPR`      | expresión de aceptación inválida        | revisá `acceptance` en el workflow                  |
 | `E_INTERNAL`  | bug                                     | reportá comando e input                             |
 
 Las sugerencias de tipeo (`Did you mean --json?`) también salen en
@@ -177,6 +211,10 @@ m1 local start  --provider liquid   # idempotente
 m1 local stop   --provider liquid
 ```
 
+Si el `provider.model` es un repo de HuggingFace y el `.gguf` no está en la
+caché, **pregunta antes de descargar**. Sin TTY falla con el comando exacto; para
+automatizar usá `--download`.
+
 Si el default de la config no es local y hay un único provider local, los
 comandos `local` lo usan y lo avisan por stderr.
 
@@ -189,14 +227,10 @@ Orden de búsqueda:
 3. config de emergencia con provider `mock` (la CLI avisa por stderr)
 
 `-c/--config <archivo>` fuerza una ruta; `--provider <alias>` elige el alias.
-Para usar `m1` desde cualquier carpeta con la config real:
+`m1 provider add|edit|remove|set-default` escribe **siempre** en el archivo
+global, sin importar el `-c`.
 
-```bash
-mkdir -p ~/.config/m1-agent
-cp m1.config.json ~/.config/m1-agent/config.json
-```
-
-## Instalación global
+## Instalación global (desde el repo)
 
 ```bash
 pnpm build
@@ -209,7 +243,8 @@ m1 --version
 1. `--json` siempre.
 2. Exit code primero, texto después.
 3. `error.hint` antes de reintentar.
-4. No inventes flags ni slots: `m1 <comando> --help` y `m1 recipe schema`.
+4. No inventes flags ni slots: `m1 <comando> --help` y `m1 workflow schema`.
 5. `--print-request` antes de gastar llamadas.
 6. Timeout alto para imágenes locales.
 7. Si el verdict es `fail`, aplicá `issues[].remediation` y volvé a correr.
+8. Workflows por nombre: `m1 workflow list` antes de inventar uno.

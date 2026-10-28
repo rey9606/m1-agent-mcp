@@ -5,6 +5,13 @@ import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { M1Error } from '../core/errors';
 import type { LocalAutoStart, ProviderConfig } from '../providers/types';
+import {
+  hfRepoPath,
+  llamaModelArgs,
+  modelLabel,
+  resolveModelSource,
+} from './models';
+import type { ModelSource } from './models';
 
 export const DEFAULT_LOCAL_START_TIMEOUT_MS = 180_000;
 export const DEFAULT_HEALTH_PATH = '/health';
@@ -209,6 +216,10 @@ function isLlamaServer(command: string): boolean {
 /**
  * Construye el comando de arranque. Para `llama-server` garantiza `--port`,
  * `--host` y `--alias` (así `/v1/models` publica el id que usa la receta).
+ *
+ * Si `launch.args` no elige el modelo (`-m`, `--model`, `-hf`, `--hf-repo`),
+ * se agrega el que sale de `provider.model` (repo de HF o `.gguf` local) y el
+ * `--mmproj` de `launch.mmproj`. Los args explícitos siempre mandan.
  */
 export function buildLaunchSpec(
   cfg: ProviderConfig,
@@ -224,6 +235,8 @@ export function buildLaunchSpec(
     baseUrl: cfg.baseUrl,
   });
   if (isLlamaServer(command)) {
+    args.push(...llamaModelArgs(resolveModelSource(cfg)));
+    if (launch.mmproj) ensureFlag(args, '--mmproj', launch.mmproj);
     ensureFlag(args, '--port', String(opts.port));
     ensureFlag(args, '--host', opts.host);
     if (cfg.model) ensureFlag(args, '--alias', cfg.model);
@@ -584,9 +597,21 @@ export interface EnsureLocalOptions {
   autoStart?: LocalAutoStart;
   /** Sólo se pregunta si el proceso corre en una TTY interactiva. */
   interactive: boolean;
+  /** `--download`: acepta bajar el modelo de HuggingFace sin preguntar. */
+  download?: boolean;
   onStatus?: (line: string) => void;
   stateDir?: string;
   runtime?: Partial<LocalRuntime>;
+}
+
+/** Estado del modelo de un `llama-server` (para `m1 local status`). */
+export interface LocalModelStatus {
+  mode: 'hf' | 'file';
+  /** Repo de HF (`org/repo[:quant]`) o la ruta del `.gguf`. */
+  spec?: string;
+  /** `true` si ya está en la caché / disco. */
+  present: boolean;
+  path?: string;
 }
 
 export interface EnsureLocalResult {
@@ -596,7 +621,38 @@ export interface EnsureLocalResult {
   /** PID del servidor (en modo consola se descubre por el puerto). */
   pid?: number;
   logPath?: string;
+  model?: LocalModelStatus;
   warnings: string[];
+}
+
+/** Modelo configurado en `provider.model`, sólo para `llama-server`. */
+export function modelStatus(cfg: ProviderConfig): LocalModelStatus | undefined {
+  const launch = cfg.launch;
+  if (!launch) return undefined;
+  if (!isLlamaServer(launch.command ?? DEFAULT_LOCAL_COMMAND)) return undefined;
+
+  const source = resolveModelSource(cfg);
+  return describeModelSource(source);
+}
+
+function describeModelSource(source: ModelSource): LocalModelStatus | undefined {
+  if (source.mode === 'hf') {
+    return {
+      mode: 'hf',
+      spec: modelLabel(source),
+      present: source.cached,
+      ...(source.cachePath !== undefined ? { path: source.cachePath } : {}),
+    };
+  }
+  if (source.mode === 'file') {
+    return { mode: 'file', spec: source.path, present: source.exists, path: source.path };
+  }
+  return undefined;
+}
+
+function downloadDetails(source: ModelSource): { model?: string; cachePath?: string } | undefined {
+  if (source.mode !== 'hf') return undefined;
+  return { model: modelLabel(source), cachePath: source.cachePath ?? hfRepoPath(source) };
 }
 
 function notRunningError(
@@ -731,14 +787,58 @@ async function startAndWait(
 }
 
 /**
+ * Si el modelo de HF no está cacheado, pregunta (TTY) o falla con el comando
+ * exacto. Con `--download` sigue: `llama-server -hf` descarga y cachea solo.
+ */
+async function confirmModelDownload(
+  options: EnsureLocalOptions,
+  cfg: ProviderConfig,
+  runtime: LocalRuntime,
+): Promise<void> {
+  if (!isLlamaServer(cfg.launch?.command ?? DEFAULT_LOCAL_COMMAND)) return;
+
+  const source = resolveModelSource(cfg);
+  if (source.mode !== 'hf' || source.cached) return;
+  if (options.download === true) return;
+
+  const label = modelLabel(source) ?? source.repo;
+  const hint = `m1 local start --provider ${options.alias} --download`;
+  const details = downloadDetails(source);
+
+  if (!options.interactive) {
+    throw new M1Error('E_PROVIDER', `el modelo ${label} no está descargado`, {
+      hint,
+      details,
+    });
+  }
+
+  const accepted = await runtime.confirm(
+    `El modelo ${label} no está descargado. ¿Descargarlo ahora? [y/N] `,
+  );
+  if (!accepted) {
+    throw new M1Error('E_PROVIDER', 'descarga cancelada', { hint, details });
+  }
+}
+
+/**
  * Garantiza un endpoint local disponible.
  *
  * 1. Si ya responde, lo usa.
  * 2. Si hay un servidor registrado (aunque sea en otro puerto), lo reutiliza.
  * 3. Si no, aplica la política (`ask` pregunta en TTY) y arranca en el primer
  *    puerto libre desde `launch.port` (así no choca con otro proceso).
+ *
+ * Antes de arrancar, si el modelo de HF no está cacheado y no vino
+ * `download: true`, pregunta o falla (E_PROVIDER) en vez de bajar GBs de
+ * sorpresa.
  */
 export async function ensureLocalEndpoint(options: EnsureLocalOptions): Promise<EnsureLocalResult> {
+  const result = await ensureLocalEndpointInner(options);
+  const model = modelStatus(options.cfg);
+  return model ? { ...result, model } : result;
+}
+
+async function ensureLocalEndpointInner(options: EnsureLocalOptions): Promise<EnsureLocalResult> {
   const { cfg } = options;
   if (cfg.kind !== 'systemone' || !cfg.launch || !cfg.baseUrl) {
     return { baseUrl: cfg.baseUrl ?? '', started: false, warnings: [] };
@@ -822,6 +922,9 @@ export async function ensureLocalEndpoint(options: EnsureLocalOptions): Promise<
     );
   }
 
+  // El modelo se chequea acá: si falta, se pregunta antes de levantar nada.
+  await confirmModelDownload(options, cfg, runtime);
+
   const port = await pickPort(endpoint.host, preferredPort, runtime);
 
   if (policy === 'ask') {
@@ -852,6 +955,8 @@ export interface LocalStatus {
   port: number;
   logPath?: string;
   record?: LocalServerRecord;
+  /** Sólo `llama-server` con modelo configurado. */
+  model?: LocalModelStatus;
 }
 
 /** Estado del endpoint local sin arrancar nada. */
@@ -873,6 +978,7 @@ export async function localStatus(
 
   const target = record && runtime.isAlive(record.pid) ? record.baseUrl : cfg.baseUrl;
   const probe = await runtime.probe(target, { healthPath: cfg.launch?.healthPath });
+  const model = modelStatus(cfg);
   return {
     provider: alias,
     baseUrl: target,
@@ -880,6 +986,7 @@ export async function localStatus(
     port: parseLocalEndpoint(target).port,
     ...(record?.logPath !== undefined ? { logPath: record.logPath } : {}),
     ...(record !== undefined ? { record } : {}),
+    ...(model !== undefined ? { model } : {}),
   };
 }
 

@@ -15,6 +15,8 @@ export interface LocalFlags {
   provider?: string;
   config?: string;
   json?: boolean;
+  /** `--download`: acepta descargar el modelo de HuggingFace sin preguntar. */
+  download?: boolean;
 }
 
 interface ResolvedLocal {
@@ -79,7 +81,9 @@ export async function localStartCommand(flags: LocalFlags): Promise<never> {
       alias,
       cfg,
       autoStart: 'always',
-      interactive: false,
+      // Hace falta TTY real para poder preguntar por la descarga del modelo.
+      interactive: !flags.json && Boolean(process.stdin.isTTY && process.stderr.isTTY),
+      download: flags.download,
       onStatus: (line) => {
         if (!flags.json) process.stderr.write(`  … ${line}\n`);
       },
@@ -90,6 +94,11 @@ export async function localStartCommand(flags: LocalFlags): Promise<never> {
     } else {
       process.stdout.write(`  ✓ ${alias}   running   ${result.baseUrl}\n`);
       if (result.pid !== undefined) process.stdout.write(`    pid: ${result.pid}\n`);
+      if (result.model?.spec) {
+        process.stdout.write(
+          `    modelo: ${result.model.spec} (${result.model.present ? 'presente' : 'falta'})\n`,
+        );
+      }
       if (result.logPath) process.stdout.write(`    log: ${result.logPath}\n`);
       process.stdout.write(
         `    queda corriendo: cerralo desde su consola o con \`m1 local stop --provider ${alias}\`\n`,
@@ -113,6 +122,11 @@ export async function localStatusCommand(flags: LocalFlags): Promise<never> {
     } else {
       const icon = status.state === 'running' ? '✓' : status.state === 'starting' ? '…' : '✗';
       process.stdout.write(`  ${icon} ${alias.padEnd(8)} ${status.state.padEnd(9)} ${status.baseUrl}\n`);
+      if (status.model?.spec) {
+        process.stdout.write(
+          `    modelo: ${status.model.spec} (${status.model.present ? 'presente' : 'falta'})\n`,
+        );
+      }
       if (status.logPath) process.stdout.write(`    log: ${status.logPath}\n`);
       if (status.state !== 'running' && cfg.launch) {
         const spec = buildLaunchSpec(cfg, {

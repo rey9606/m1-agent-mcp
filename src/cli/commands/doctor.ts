@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { loadConfig } from '../../config/config';
 import { resolveSecrets } from '../../config/credentials';
 import { localStatus } from '../../local/lifecycle';
+import { builtinWorkflowsDir, listWorkflows } from '../../workflows/store';
 import { fail } from '../output';
 
 export interface DoctorFlags {
@@ -18,7 +19,14 @@ export async function doctorCommand(flags: DoctorFlags): Promise<never> {
     checks.push({ name: 'node', ok: major >= 22, detail: `v${process.versions.node} (requiere >=22)` });
     checks.push({ name: 'config', ok: Boolean(config.source && config.source !== '(builtin)'), detail: config.source ?? '(builtin)' });
     checks.push({ name: '.env', ok: existsSync(join(process.cwd(), '.env')), detail: existsSync(join(process.cwd(), '.env')) ? '.env presente' : 'sin .env (opcional)' });
-    checks.push({ name: 'examples', ok: existsSync(join(process.cwd(), 'examples')), detail: 'examples/' });
+    // Los built-in viajan dentro del paquete, así que se resuelven desde el
+    // módulo, no desde el cwd del usuario.
+    const builtin = listWorkflows().filter((w) => w.builtin);
+    checks.push({
+      name: 'workflows',
+      ok: builtin.length > 0,
+      detail: builtin.length > 0 ? `${builtin.length} built-in en ${builtinWorkflowsDir()}` : 'no se encontraron los built-in',
+    });
 
     const providers = await Promise.all(
       Object.entries(config.providers).map(async ([alias, cfg]) => {

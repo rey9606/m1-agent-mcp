@@ -59,11 +59,11 @@ describe('m1 guide', () => {
     const result = cli(['guide']);
 
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain('m1 v0.1.0');
+    expect(result.stdout).toContain('m1 v');
     expect(result.stdout).toContain('## Comandos');
     expect(result.stdout).toContain('## Exit codes');
     expect(result.stdout).toContain('## Reglas para agentes');
-    expect(result.stdout).toContain('m1 run examples/copy-checker.json');
+    expect(result.stdout).toContain('m1 run copy-checker');
   });
 
   it('--json devuelve secciones estructuradas y la versión', () => {
@@ -76,7 +76,7 @@ describe('m1 guide', () => {
       sections: Array<{ id: string; title: string; body: string }>;
     };
     expect(payload.ok).toBe(true);
-    expect(payload.version).toBe('0.1.0');
+    expect(payload.version).toMatch(/^\d+\.\d+\.\d+/);
     const ids = payload.sections.map((section) => section.id);
     expect(ids).toContain('que-es');
     expect(ids).toContain('salida');

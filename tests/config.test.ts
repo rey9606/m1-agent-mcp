@@ -178,9 +178,26 @@ describe('parseConfig: launch local', () => {
     });
   });
 
-  it('exige launch.args', () => {
+  it('acepta launch sin args (el servidor local elige el modelo)', () => {
+    const config = parseConfig({
+      providers: { liquid: { ...base, launch: { command: 'llama-server', port: 9931 } } },
+    });
+
+    expect(config.providers.liquid?.launch).toEqual({ command: 'llama-server', port: 9931 });
+    expect(config.providers.liquid?.launch?.args).toBeUndefined();
+  });
+
+  it('acepta launch.args vacío', () => {
+    const config = parseConfig({
+      providers: { liquid: { ...base, launch: { args: [] } } },
+    });
+
+    expect(config.providers.liquid?.launch?.args).toEqual([]);
+  });
+
+  it('rechaza launch.args con elementos que no son strings', () => {
     const error = catchM1(() =>
-      parseConfig({ providers: { liquid: { ...base, launch: { port: 9931 } } } }),
+      parseConfig({ providers: { liquid: { ...base, launch: { args: ['-hf', 42] } } } }),
     );
 
     expect(error.code).toBe('E_CONFIG');

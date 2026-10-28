@@ -72,6 +72,11 @@ export interface LocalLaunchConfig {
   command?: string;
   /** Argumentos. Admite `{port}`, `{host}`, `{model}` y `{baseUrl}`. */
   args?: string[];
+  /**
+   * Ruta al proyector multimodal (`mmproj`). Se pasa como `--mmproj` para
+   * `llama-server` si `args` no lo trae. Sólo modelos con visión/audio.
+   */
+  mmproj?: string;
   /** Puerto preferido. Default: el puerto de `baseUrl`. */
   port?: number;
   /** Ruta de health relativa al origin. Default: `/health`. */

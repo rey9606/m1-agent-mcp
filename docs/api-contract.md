@@ -127,7 +127,7 @@ Detalles (`src/providers/openrouter.ts`):
 | Auth | `Authorization: Bearer <key>` solo si hay key |
 | Modelo por defecto | `local-decision` (override con `provider.model` o `--model`) |
 | Timeout por defecto | 60 s |
-| Imágenes | Sí (se incluyen si la etapa las resuelve) |
+| Imágenes | Sí: `{ content_type, base64 }` por defecto, o data URLs con `provider.imageFormat: "dataUrl"` (llama.cpp) |
 
 Es el adaptador genérico: mismo body, misma respuesta, `baseUrl` configurable y autenticación opcional. Se usa para servidores locales, proxies o cualquier implementación propia del contrato.
 
@@ -171,6 +171,7 @@ llama-server -hf LiquidAI/d1-2B-GGUF:Q8_0 -b 8192 -ub 8192 --alias d1-2B --port 
   "baseUrl": "http://127.0.0.1:9931/v1/systemone",
   "model": "d1-2B",
   "unwrap": "auto",
+  "imageFormat": "dataUrl",
   "launch": {
     "command": "llama-server",
     "args": ["-hf", "LiquidAI/d1-2B-GGUF:Q8_0", "-b", "8192", "-ub", "8192"],
@@ -195,6 +196,10 @@ Límites del modelo (llama.cpp):
 - d1-2B evalúa cada pregunta en un batch: `-b`/`-ub` deben contener el state y los medios; una imagen usa como máximo la mitad de `-ub` (8192 → 4096 tokens por imagen).
 - `lfm2-d1-omni` corta el prompt a 16.384 tokens y también exige que entre en `--ubatch-size`.
 - Imágenes: requieren `--mmproj`; sin proyector, el endpoint responde `501`. Audio (d1-Omni) también requiere proyector.
+- llama.cpp exige `images` como data URLs (`data:image/png;base64,...`): usá `provider.imageFormat: "dataUrl"`. Además, `-b`/`-ub` deben cubrir los tokens de la imagen (una captura de 900×600 ≈ 1.8k tokens); con el default de 512 el servidor responde `500`.
+- **Una tarea por pregunta:** `/v1/systemone` procesa cada pregunta como un task independiente y **re-codifica los medios en cada uno**. Una etapa de 4 preguntas sobre una imagen cuesta ~4× una de 1. Medido con d1-omni-600M Q8_0 en CPU: 384×384 + 4 preguntas ≈ 9 s; 900×600 + 4 preguntas ≈ 108 s (más el `diagnostico`: 130 s). Por eso en recetas multimodales conviene `provider.timeoutMs`/`--timeout` de 300000.
+- **Tokens de imagen medidos** (misma build, texto aparte: 55 tokens): 384×384 ≈ 144; 512×512 ≈ 246; 1024×1024 ≈ 1.270; 1920×1080 ≈ 2.290. Escalan con el área, con tiling de 512×512 + thumbnail para frames grandes (LFM2.5-VL); no hay tope de resolución propio, el tope es el contexto.
+- **Contexto:** el modelo está entrenado a 16.384 tokens (texto + imágenes + audio) y con imágenes el texto se recorta a 896. El GGUF declara `lfm2.context_length = 128000`, así que `llama-server` asigna 128k y **no rechaza** prompts de más de 16k: el límite es de calidad/entrenamiento, no del servidor.
 - Errores: `400` request inválido; `501` modelo que no es de decisión o imágenes sin proyector.
 
 ## Respuesta

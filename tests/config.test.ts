@@ -225,6 +225,27 @@ describe('parseConfig: launch local', () => {
     expect(error.code).toBe('E_CONFIG');
     expect(error.message).toContain('ask, always o never');
   });
+
+  it('parsea imageFormat en systemone y lo rechaza en otros kinds', () => {
+    const config = parseConfig({
+      providers: { liquid: { ...base, imageFormat: 'dataUrl' } },
+    });
+    expect(config.providers.liquid?.imageFormat).toBe('dataUrl');
+
+    const invalidValue = catchM1(() =>
+      parseConfig({ providers: { liquid: { ...base, imageFormat: 'url' } } }),
+    );
+    expect(invalidValue.code).toBe('E_CONFIG');
+    expect(invalidValue.message).toContain('object o dataUrl');
+
+    const invalidKind = catchM1(() =>
+      parseConfig({
+        providers: { cf: { kind: 'cloudflare', imageFormat: 'dataUrl' } },
+      }),
+    );
+    expect(invalidKind.code).toBe('E_CONFIG');
+    expect(invalidKind.message).toContain('systemone');
+  });
 });
 
 describe('findConfigPath', () => {

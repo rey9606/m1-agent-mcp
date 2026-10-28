@@ -29,6 +29,8 @@
       "baseUrl": "http://127.0.0.1:9931/v1/systemone",
       "model": "d1-2B",
       "unwrap": "auto",
+      "imageFormat": "dataUrl",
+      "timeoutMs": 300000,
       "launch": {
         "command": "llama-server",
         "args": ["-hf", "LiquidAI/d1-2B-GGUF:Q8_0", "-b", "8192", "-ub", "8192"],

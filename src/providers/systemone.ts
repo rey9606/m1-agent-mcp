@@ -55,7 +55,12 @@ export function createSystemOneProvider(name: string, cfg: ProviderConfig): Deci
         state: request.state,
         questions: request.questions,
       };
-      if (request.images && request.images.length > 0) body.images = request.images;
+      if (request.images && request.images.length > 0) {
+        body.images =
+          cfg.imageFormat === 'dataUrl'
+            ? request.images.map((image) => `data:${image.content_type};base64,${image.base64}`)
+            : request.images;
+      }
 
       const raw = await postDecisionJson({
         provider: 'SystemOne',

@@ -203,6 +203,8 @@ Detalle de `launch`:
   "kind": "systemone",
   "baseUrl": "http://127.0.0.1:9931/v1/systemone",
   "model": "d1-2B",
+  "imageFormat": "dataUrl",
+  "timeoutMs": 300000,
   "launch": {
     "command": "llama-server",
     "args": ["-hf", "LiquidAI/d1-2B-GGUF:Q8_0", "-b", "8192", "-ub", "8192"],
@@ -216,8 +218,9 @@ Detalle de `launch`:
 - `args` admite `{port}`, `{host}`, `{model}` y `{baseUrl}`. Para `llama-server` se agregan `--port`, `--host` y `--alias <model>` si faltan; el alias hace que `/v1/models` publique el id que usa la receta.
 - `autoStart`: `ask` (default), `always` o `never`.
 - `launch` sólo aplica a `kind: systemone` con `baseUrl` loopback.
-- **Imágenes:** agregá el proyector (`--mmproj ...`) y un `-ub` suficiente. Sin `mmproj`, el servidor devuelve 501 para imágenes. d1-2B reserva como máximo la mitad de `-ub` por imagen.
-- **Alternativas:** `LiquidAI/d1-3B-GGUF:Q8_0` (soporte más estable) o `LiquidAI/d1-Omni-2B-GGUF` (audio; requiere `--mmproj`). Cambiá `args` y `model`. En `lfm2-d1-omni` todo el prompt se evalúa en un batch: `-ub` debe cubrirlo y se corta a 16.384 tokens.
+- **Imágenes:** agregá el proyector (`--mmproj ...`) y un `-ub` suficiente. Sin `mmproj`, el servidor devuelve 501 para imágenes. d1-2B reserva como máximo la mitad de `-ub` por imagen. Con `llama.cpp` además hay que usar `"imageFormat": "dataUrl"` y cubrir los tokens de la imagen en `-b`/`-ub` (900×600 ≈ 1,8k tokens).
+- **Costo por pregunta:** `/v1/systemone` procesa una tarea por pregunta y re-codifica la imagen en cada una. Medido con `d1-omni-600M` Q8_0 en CPU: 384×384 + 4 preguntas ≈ 9 s; 900×600 + 4 preguntas ≈ 108 s (+ `diagnostico` ≈ 130 s). Para recetas multimodales usá `timeoutMs`/`--timeout` de 300000; el default de 60 s corta antes.
+- **Alternativas:** `LiquidAI/d1-3B-GGUF:Q8_0` (soporte más estable) o `LiquidAI/d1-omni-600M-GGUF` (imágenes + audio; requiere `--mmproj`). Cambiá `args` y `model`. En `lfm2-d1-omni` todo el prompt por pregunta se evalúa en un batch: `-ub` debe cubrirlo. El modelo está entrenado a 16.384 tokens (con imágenes, el texto se recorta a 896), aunque el GGUF declare `context_length = 128000`.
 
 Orden de selección del provider: `--provider` > `provider` de la receta > `default` de `m1.config.json`.
 

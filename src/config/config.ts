@@ -134,6 +134,15 @@ function parseProvider(alias: string, raw: unknown): ProviderConfig {
   if (p.headers && typeof p.headers === 'object') cfg.headers = p.headers as Record<string, string>;
   if (p.unwrap === 'auto' || p.unwrap === 'result' || p.unwrap === 'none') cfg.unwrap = p.unwrap;
   if (typeof p.timeoutMs === 'number') cfg.timeoutMs = p.timeoutMs;
+  if (p.imageFormat !== undefined) {
+    if (p.imageFormat !== 'object' && p.imageFormat !== 'dataUrl') {
+      throw new M1Error('E_CONFIG', `provider "${alias}": imageFormat debe ser object o dataUrl`);
+    }
+    if (cfg.kind !== 'systemone') {
+      throw new M1Error('E_CONFIG', `provider "${alias}": imageFormat sólo aplica a kind "systemone"`);
+    }
+    cfg.imageFormat = p.imageFormat;
+  }
   const fixturesDir = str(p.fixturesDir);
   if (fixturesDir) cfg.fixturesDir = fixturesDir;
   if (cfg.kind === 'systemone' && !cfg.baseUrl) {

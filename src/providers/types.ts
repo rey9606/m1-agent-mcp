@@ -57,6 +57,9 @@ export interface DecisionResponse {
 
 export type ProviderKind = 'cloudflare' | 'typesafe' | 'openrouter' | 'systemone' | 'mock';
 
+/** Formato del campo `images` en el body. `object` = {content_type, base64}. */
+export type ImageFormat = 'object' | 'dataUrl';
+
 /** Política para levantar un servidor local cuando no responde. */
 export type LocalAutoStart = 'ask' | 'always' | 'never';
 
@@ -92,6 +95,8 @@ export interface ProviderConfig {
   /** Cómo desenvolver la respuesta HTTP. `auto` detecta `{result:{...}}`. */
   unwrap?: 'auto' | 'result' | 'none';
   timeoutMs?: number;
+  /** Formato de `images` para endpoints `systemone`. Default: `object`. */
+  imageFormat?: ImageFormat;
   /** Sólo mock: directorio de fixtures. */
   fixturesDir?: string;
   /** Sólo systemone local: cómo levantar el servidor si no está corriendo. */

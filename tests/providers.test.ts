@@ -402,6 +402,36 @@ describe('systemone (endpoint compatible)', () => {
 
     expect(headersOf(callOf(fetchMock).init).Authorization).toBeUndefined();
   });
+
+  it('convierte imágenes a data URLs con imageFormat=dataUrl', async () => {
+    const fetchMock = stubFetch(() => jsonResponse({ answers: ANSWERS }));
+    const provider = createSystemOneProvider('liquid', {
+      kind: 'systemone',
+      baseUrl: 'http://127.0.0.1:9931/v1/systemone',
+      imageFormat: 'dataUrl',
+    });
+
+    await provider.evaluate(
+      baseRequest({ images: [{ content_type: 'image/png', base64: 'aGVsbG8=' }] }),
+    );
+
+    const body = JSON.parse(String(callOf(fetchMock).init.body)) as { images: string[] };
+    expect(body.images).toEqual(['data:image/png;base64,aGVsbG8=']);
+  });
+
+  it('mantiene el formato objeto por defecto', async () => {
+    const fetchMock = stubFetch(() => jsonResponse({ answers: ANSWERS }));
+    const provider = createSystemOneProvider('local', {
+      kind: 'systemone',
+      baseUrl: 'https://example.test/decide',
+    });
+    const images = [{ content_type: 'image/png', base64: 'aGVsbG8=' }];
+
+    await provider.evaluate(baseRequest({ images }));
+
+    const body = JSON.parse(String(callOf(fetchMock).init.body)) as { images: unknown };
+    expect(body.images).toEqual(images);
+  });
 });
 
 describe('mock', () => {

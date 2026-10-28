@@ -49,25 +49,33 @@ export function normalizeAnswer(criterion: Criterion, answer: Answer): Normalize
   let probabilities: Record<string, number> | undefined;
   let legend: Record<string, unknown> | undefined;
 
-  if (criterion.type === 'noul') {
-    raw = clamp01(answer.noul);
-    normalized = polarity === 'negative' ? 1 - raw : raw;
-  } else if (criterion.type === 'choice') {
-    const choice = answer.choice;
-    const base = criterion.mapping?.[choice] ?? answer.probabilities[choice] ?? 0;
-    raw = choice;
-    normalized = polarity === 'negative' ? 1 - base : base;
-    confidence = answer.confidence;
-    probabilities = answer.probabilities;
-  } else {
-    // score
-    const levels = Array.isArray(criterion.criteria) ? criterion.criteria.length : 0;
-    raw = answer.score;
-    normalized = levels > 1 ? clamp01(answer.score / (levels - 1)) : 0;
-    if (polarity === 'negative') normalized = 1 - normalized;
-    confidence = answer.confidence;
-    probabilities = answer.probabilities;
-    legend = answer.legend;
+  // `answer.type === criterion.type` ya está garantizado arriba; el switch
+  // estrecha la unión de `Answer` para TypeScript.
+  switch (answer.type) {
+    case 'noul': {
+      raw = clamp01(answer.noul);
+      normalized = polarity === 'negative' ? 1 - raw : raw;
+      break;
+    }
+    case 'choice': {
+      const choice = answer.choice;
+      const base = criterion.mapping?.[choice] ?? answer.probabilities[choice] ?? 0;
+      raw = choice;
+      normalized = polarity === 'negative' ? 1 - base : base;
+      confidence = answer.confidence;
+      probabilities = answer.probabilities;
+      break;
+    }
+    case 'score': {
+      const levels = Array.isArray(criterion.criteria) ? criterion.criteria.length : 0;
+      raw = answer.score;
+      normalized = levels > 1 ? clamp01(answer.score / (levels - 1)) : 0;
+      if (polarity === 'negative') normalized = 1 - normalized;
+      confidence = answer.confidence;
+      probabilities = answer.probabilities;
+      legend = answer.legend;
+      break;
+    }
   }
 
   const result: NormalizedAnswer = {

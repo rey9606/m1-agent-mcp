@@ -145,6 +145,58 @@ Es el adaptador genérico: mismo body, misma respuesta, `baseUrl` configurable y
 }
 ```
 
+### llama.cpp (modelo local)
+
+`llama-server` implementa la misma superficie en `POST /v1/systemone` para modelos de decisión nativos (los que publican `architecture.output_modalities: ["decisions"]` en `GET /v1/models`). No requiere API key.
+
+| Dato | Valor |
+| --- | --- |
+| Endpoint | `http://127.0.0.1:<port>/v1/systemone` |
+| Health | `GET /health` → `200` listo, `503` cargando el modelo |
+| Catálogo | `GET /v1/models` (el id es el `--alias`, o el path del GGUF) |
+| Auth | No |
+| Modelos Liquid | `LiquidAI/d1-2B-GGUF` (`d1-2B`), `d1-3B-GGUF`, `d1-Omni-2B-GGUF`, `d1-omni-600M-GGUF` |
+
+Comando mínimo (el alias fija el id que ve `m1`):
+
+```bash
+llama-server -hf LiquidAI/d1-2B-GGUF:Q8_0 -b 8192 -ub 8192 --alias d1-2B --port 9931
+```
+
+`launch` en la config le permite a `m1` hacer eso por vos:
+
+```json
+"liquid": {
+  "kind": "systemone",
+  "baseUrl": "http://127.0.0.1:9931/v1/systemone",
+  "model": "d1-2B",
+  "unwrap": "auto",
+  "launch": {
+    "command": "llama-server",
+    "args": ["-hf", "LiquidAI/d1-2B-GGUF:Q8_0", "-b", "8192", "-ub", "8192"],
+    "port": 9931,
+    "startTimeoutMs": 240000,
+    "autoStart": "ask"
+  }
+}
+```
+
+Comportamiento del ciclo de vida (`src/local/lifecycle.ts`):
+
+- Sondea `/health` con timeout corto. Si responde, no arranca nada.
+- Si el puerto preferido está ocupado por otro proceso, busca el siguiente libre (hasta 50) y reescribe `baseUrl` en memoria.
+- `autoStart: ask` sólo pregunta si `stdin` y `stderr` son TTY; `--local-start always|never` lo overridea. En `--json` nunca hay prompt.
+- El proceso se lanza detached, con stdout/stderr a `~/.cache/m1-agent/local/logs/<alias>.log`. El registro (`pid`, `port`, `baseUrl`, `logPath`) queda en `~/.cache/m1-agent/local/<alias>.json` y se reutiliza en el próximo run.
+- `m1 local status` sondea sin arrancar; `m1 local stop` termina el PID registrado.
+
+Límites del modelo (llama.cpp):
+
+- `state` puede ser `null` para preguntar sólo sobre imágenes (d1-2B/d1-omni).
+- d1-2B evalúa cada pregunta en un batch: `-b`/`-ub` deben contener el state y los medios; una imagen usa como máximo la mitad de `-ub` (8192 → 4096 tokens por imagen).
+- `lfm2-d1-omni` corta el prompt a 16.384 tokens y también exige que entre en `--ubatch-size`.
+- Imágenes: requieren `--mmproj`; sin proyector, el endpoint responde `501`. Audio (d1-Omni) también requiere proyector.
+- Errores: `400` request inválido; `501` modelo que no es de decisión o imágenes sin proyector.
+
 ## Respuesta
 
 ```json

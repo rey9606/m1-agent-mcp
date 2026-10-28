@@ -75,7 +75,7 @@ pnpm m1 run examples/copy-checker.json --state "texto" --print-request
 
 | Comando | Para qué | Flags principales |
 | --- | --- | --- |
-| `m1 run <recipe>` | Ejecuta una receta sobre un trabajo | `-i, --input <file>`, `--state <text>`, `--state-file <file>`, `--image <path>` (repetible), `--slot <name>`, `--image-slot <name>`, `--stdin`, `--provider <alias>`, `--model <id>`, `--timeout <ms>`, `--dry-run`, `--print-request`, `--trace`, `--json`, `--compact`, `-c, --config <file>` |
+| `m1 run <recipe>` | Ejecuta una receta sobre un trabajo | `-i, --input <file>`, `--state <text>`, `--state-file <file>`, `--image <path>` (repetible), `--slot <name>`, `--image-slot <name>`, `--stdin`, `--provider <alias>`, `--model <id>`, `--timeout <ms>`, `--local-start <mode>`, `--dry-run`, `--print-request`, `--trace`, `--json`, `--compact`, `-c, --config <file>` |
 | `m1 recipe validate <file>` | Valida esquema y reglas semánticas | `--json` |
 | `m1 recipe schema` | Imprime el JSON Schema de la receta | `--json` (misma salida) |
 | `m1 auth set <alias>` | Guarda credenciales del provider | `--token <key>`, `--account-id <id>`, `--env <VAR>`, `--json` |
@@ -85,7 +85,9 @@ pnpm m1 run examples/copy-checker.json --state "texto" --print-request
 | `m1 model show` | Muestra el modelo efectivo, su fuente y capacidades (visión/audio/video) | `--provider <alias>`, `--json`, `-c, --config <file>` |
 | `m1 model use <id>` | Fija el modelo del provider | `--provider <alias>`, `--project`, `--json`, `-c, --config <file>` |
 | `m1 model reset` | Borra la preferencia de modelo del usuario | `--provider <alias>`, `--json`, `-c, --config <file>` |
-| `m1 doctor` | Diagnóstico de Node, config, `.env` y providers | `--json`, `-c, --config <file>` |
+| `m1 local status` | Muestra si el servidor local está corriendo (no lo arranca) | `--provider <alias>`, `--json`, `-c, --config <file>` |
+| `m1 local stop` | Detiene el servidor local registrado | `--provider <alias>`, `--json`, `-c, --config <file>` |
+| `m1 doctor` | Diagnóstico de Node, config, `.env` y providers (incluye el servidor local) | `--json`, `-c, --config <file>` |
 
 Precedencia del modelo efectivo: `--model` (CLI) > preferencia de usuario (`~/.config/m1-agent/preferences.json`) > `provider.model` de la config > default del kind. `m1 model use` guarda en preferencias del usuario; `--project` escribe `providers.<alias>.model` en `m1.config.json`.
 
@@ -149,7 +151,7 @@ Puntos clave:
 | `cloudflare` | `@cf/cloudflare/clef-flash` | `https://api.cloudflare.com/client/v4/accounts/<accountId>/ai/run/@cf/cloudflare/<model>` | Sí (los 3 Clef) | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` |
 | `typesafe` | `jev-latest` | `https://api.typesafe.ai/v1/systemone` | No | `TYPESAFE_API_KEY` |
 | `openrouter` | `typesafe/jev-1.14` | `https://openrouter.ai/api/v1/systemone` | Sí (según modelo) | `OPENROUTER_KEY` |
-| `systemone` | `local-decision` (configurable) | `baseUrl` obligatorio | Sí | opcional (`apiKeyEnv` o `SYSTEMONE_API_KEY`) |
+| `systemone` | `local-decision` (configurable) | `baseUrl` obligatorio | Sí | opcional (`apiKeyEnv` o `SYSTEMONE_API_KEY`); con `launch` no requiere key |
 | `mock` | `mock` | — | Ignora | — |
 
 La precedencia de secretos es: `apiKey`/`accountId` explícitos en la config > variable de entorno (`apiKeyEnv`, y `CLOUDFLARE_ACCOUNT_ID` sólo para `kind: cloudflare`) > `~/.config/m1-agent/credentials.json`. Los valores vacíos se ignoran.
@@ -159,6 +161,61 @@ Modelos Clef disponibles (todos con visión): `@cf/cloudflare/clef` (65.536 ctx,
 OpenRouter expone modelos de decisión (`output_modalities=decisions`) con el mismo contrato System One. `m1 models --provider or` consulta el catálogo en vivo y `m1 models --provider or --free` deja sólo los gratuitos (al 2026-10-28: `baseten/mammoth-1:free`, `baseten/elephant-1:free`, `respan/span-01-lite:free`; son sólo texto). El alias de ejemplo `or` usa `baseten/mammoth-1:free`; para visión conviene `typesafe/jev-1.14` o `cloudflare/clef-*`. Los modelos `:free` tienen rate limits más bajos. Detalle del contrato en [docs/api-contract.md](docs/api-contract.md).
 
 En OpenRouter las imágenes viajan dentro de `state` como partes `image_url` (no en un campo `images` de nivel superior). Por eso, al usar `--image` el `state` debe ser string o array; un `state` objeto produce `E_CONFIG` antes de llamar.
+
+### Modelo local (llama.cpp)
+
+El alias `liquid` de la config de ejemplo sirve **Liquid d1-2B** con `llama-server`: no necesita API key ni `.env`. La primera ejecución descarga el GGUF Q8_0 (≈2,5 GB); después queda en la caché de llama.cpp.
+
+Requisitos:
+
+- `llama-server` en el `PATH` (build reciente de llama.cpp; el soporte de d1-2B se mergeó el 2026-10-27).
+- Un puerto libre; el alias usa `9931`.
+
+```bash
+pnpm m1 run examples/copy-checker.json --provider liquid \
+  --state "Me cobraron dos veces este mes, necesito el reintegro"
+```
+
+Antes de llamar, `m1` sondea `GET /health` en `baseUrl`:
+
+- Si el servidor ya responde, lo usa (no levanta nada).
+- Si hay un servidor registrado en otro puerto, lo reutiliza.
+- Si no responde y hay TTY, pregunta: `¿Levanto llama-server en el puerto 9931? [Y/n]`.
+- `--local-start always` arranca sin preguntar; `--local-start never` falla con el comando exacto.
+- En `--json` o sin TTY nunca se pregunta: falla salvo `always`.
+
+**Elección de puerto:** parte de `launch.port` (9931). Si está ocupado por otro proceso, prueba 9932, 9933… hasta encontrar uno libre, arranca ahí y reescribe `baseUrl` en memoria. No hace falta tocar la config.
+
+El PID, puerto y log se guardan en `~/.cache/m1-agent/local/liquid.json` (o `$M1_CACHE_DIR/local`). Eso permite reutilizar el servidor entre runs y administrarlo:
+
+```bash
+pnpm m1 local status --provider liquid
+pnpm m1 local stop --provider liquid
+# log: ~/.cache/m1-agent/local/logs/liquid.log
+```
+
+Detalle de `launch`:
+
+```json
+"liquid": {
+  "kind": "systemone",
+  "baseUrl": "http://127.0.0.1:9931/v1/systemone",
+  "model": "d1-2B",
+  "launch": {
+    "command": "llama-server",
+    "args": ["-hf", "LiquidAI/d1-2B-GGUF:Q8_0", "-b", "8192", "-ub", "8192"],
+    "port": 9931,
+    "startTimeoutMs": 240000,
+    "autoStart": "ask"
+  }
+}
+```
+
+- `args` admite `{port}`, `{host}`, `{model}` y `{baseUrl}`. Para `llama-server` se agregan `--port`, `--host` y `--alias <model>` si faltan; el alias hace que `/v1/models` publique el id que usa la receta.
+- `autoStart`: `ask` (default), `always` o `never`.
+- `launch` sólo aplica a `kind: systemone` con `baseUrl` loopback.
+- **Imágenes:** agregá el proyector (`--mmproj ...`) y un `-ub` suficiente. Sin `mmproj`, el servidor devuelve 501 para imágenes. d1-2B reserva como máximo la mitad de `-ub` por imagen.
+- **Alternativas:** `LiquidAI/d1-3B-GGUF:Q8_0` (soporte más estable) o `LiquidAI/d1-Omni-2B-GGUF` (audio; requiere `--mmproj`). Cambiá `args` y `model`. En `lfm2-d1-omni` todo el prompt se evalúa en un batch: `-ub` debe cubrirlo y se corta a 16.384 tokens.
 
 Orden de selección del provider: `--provider` > `provider` de la receta > `default` de `m1.config.json`.
 

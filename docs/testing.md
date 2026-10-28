@@ -8,7 +8,7 @@ No hay capas separadas por configuración: `vitest.config.ts:6` incluye `tests/*
 
 | Capa | Archivos | Qué ejercita | Red |
 | --- | --- | --- | --- |
-| Unitarios | `tests/expr.test.ts`, `tests/template.test.ts`, `tests/normalize.test.ts`, `tests/intake.test.ts`, `tests/providers.test.ts`, `tests/config.test.ts`, `tests/engine.test.ts` | Importan módulos de `src/` y los prueban en el mismo proceso | Ninguna |
+| Unitarios | `tests/expr.test.ts`, `tests/template.test.ts`, `tests/normalize.test.ts`, `tests/intake.test.ts`, `tests/providers.test.ts`, `tests/config.test.ts`, `tests/local.test.ts`, `tests/engine.test.ts` | Importan módulos de `src/` y los prueban en el mismo proceso | Ninguna |
 | Contrato de ejemplos | `tests/examples.test.ts` | Valida las recetas de `examples/`, sus invariantes semánticas, los requests del dry-run y los veredictos con `fixtures/mock/answers.json` | Ninguna |
 | Tooling | `tests/tooling/precommit.test.ts` | Ejecuta `scripts/precommit-guards.mjs` en repos git temporales y `scripts/validate-recipes.mjs` contra recetas temporales | Ninguna (git local) |
 | E2E de CLI | `tests/cli.test.ts` | Spawnea la CLI real (`node node_modules/tsx/dist/cli.mjs src/cli/index.ts`) contra configs temporales con provider `mock` | Ninguna |
@@ -31,6 +31,7 @@ Detalles que importan:
 - `tests/integration/systemone.test.ts:110-112` levanta el servidor en el puerto 0 (efímero) sobre `127.0.0.1`; no hay red externa ni mocks del transporte.
 - El test live está envuelto en `describe.skipIf(!LIVE)` (`tests/integration/cloudflare.live.test.ts:13-15`): sin `M1_LIVE=1` no ejecuta nada y el archivo se reporta como skipped.
 - `vitest.config.ts:7` fija `testTimeout` en 10 s. Los tests que necesitan más lo pisan en el propio `it` (el live usa 45 s, `cloudflare.live.test.ts:61`).
+- `tests/local.test.ts` prueba el ciclo de vida local con `LocalRuntime` inyectado (spawn/probe/confirm falsos) y con `http.Server` reales para `/health`; nunca levanta `llama-server` ni descarga GGUF.
 
 ## 2. Comandos
 

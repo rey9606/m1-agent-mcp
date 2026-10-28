@@ -1,0 +1,251 @@
+# Contrato de API: Clef (Cloudflare) y JEV (TypeSafe)
+
+Contrato tal como lo implementa el repo (`src/providers/`). No reemplaza la documentación oficial de cada proveedor: describe lo que el motor envía y lo que acepta de vuelta. Cualquier endpoint que cumpla este contrato puede usarse como `kind: "systemone"` sin escribir código.
+
+## Forma común del request
+
+```http
+POST <url>
+Content-Type: application/json
+Authorization: Bearer <api-key>
+
+{
+  "model": "clef-flash",
+  "state": { "tarea": "...", "copy": "..." },
+  "questions": {
+    "CP-1": {
+      "type": "score",
+      "instructions": "¿Qué tan claro es el mensaje?",
+      "criteria": ["Confuso", "Mejorable", "Claro", "Cristalino"]
+    },
+    "CP-2": {
+      "type": "choice",
+      "instructions": "¿Cómo suena el tono?",
+      "criteria": { "on_brand": "Alineado", "off_brand": "Choca" }
+    },
+    "CP-3": {
+      "type": "noul",
+      "instructions": "El texto tiene un CTA único.",
+      "criteria": { "true": "Sí", "false": "No" }
+    }
+  },
+  "images": [
+    { "content_type": "image/png", "base64": "iVBORw0KGgo..." }
+  ]
+}
+```
+
+| Campo | Tipo | Obligatorio | Notas |
+| --- | --- | --- | --- |
+| `model` | string | sí | El modelo que el endpoint espera. En Cloudflare se deriva a `clef` o `clef-flash`. |
+| `state` | cualquier JSON | sí | Contexto renderizado por el motor. Puede ser objeto, array o escalar. |
+| `questions` | objeto `id → pregunta` | sí | Mapa, no array. Las claves son los ids de criterio. |
+| `images` | array | no | Se omite si no hay imágenes. `content_type` + `base64` crudo (sin prefijo `data:`). |
+
+### Preguntas
+
+| `type` | `criteria` | Semántica |
+| --- | --- | --- |
+| `noul` | opcional `{ true?: any, false?: any }` | Probabilidad de que la afirmación sea verdadera. |
+| `choice` | objeto `id → descripción` (2..255) | El modelo elige una opción y devuelve probabilidades. |
+| `score` | array ordenado de 2..10 niveles | El modelo devuelve un índice entero del nivel. |
+
+## Cloudflare (Clef)
+
+| Dato | Valor |
+| --- | --- |
+| URL | `https://api.cloudflare.com/client/v4/accounts/<accountId>/ai/run/@cf/cloudflare/<modelo>` |
+| `modelo` | `clef` o `clef-flash` |
+| Auth | `Authorization: Bearer <CLOUDFLARE_API_TOKEN>` |
+| `accountId` | `provider.accountId` o `CLOUDFLARE_ACCOUNT_ID` |
+| Modelo por defecto | `@cf/cloudflare/clef-flash` |
+| Timeout por defecto | 60 s |
+| Imágenes | Sí |
+
+Detalles de implementación (`src/providers/cloudflare.ts`):
+
+- El `model` de la config acepta `clef`, `clef-flash`, `@cf/cloudflare/clef` o `@cf/cloudflare/clef-flash`. Cualquier otro valor produce `E_CONFIG` antes de llamar.
+- El `accountId` se interpola con `encodeURIComponent`.
+- El body repite `model` además de ir en la URL.
+- `cfg.headers` se aplica primero; luego el provider fija `Content-Type` y `Authorization`, así que un header personalizado con esos nombres queda pisado.
+- La respuesta se desenvuelve antes de validarla: si el JSON raíz tiene `answers`, se usa tal cual; si tiene `result` objeto, se usa `result`; si no, se usa el JSON completo.
+
+## TypeSafe (JEV)
+
+| Dato | Valor |
+| --- | --- |
+| URL | `https://api.typesafe.ai/v1/systemone` (override con `provider.baseUrl`) |
+| Auth | `Authorization: Bearer <TYPESAFE_API_KEY>` |
+| Modelo por defecto | `jev-latest` |
+| Timeout por defecto | 60 s |
+| Imágenes | **No** |
+
+Detalles (`src/providers/typesafe.ts`):
+
+- Body: `{ model, state, questions }`; nunca incluye `images`.
+- Si la receta resuelve imágenes para una etapa, falla con `E_PROVIDER` ("JEV no soporta imágenes") antes de hacer la llamada. No las descarta silenciosamente.
+- Mismo mecanismo de unwrap y de validación de respuesta que Cloudflare.
+
+## SystemOne (endpoint compatible)
+
+| Dato | Valor |
+| --- | --- |
+| URL | `provider.baseUrl` (obligatoria, URL completa del endpoint) |
+| Auth | `Authorization: Bearer <key>` solo si hay key |
+| Modelo por defecto | `local-decision` (override con `provider.model` o `--model`) |
+| Timeout por defecto | 60 s |
+| Imágenes | Sí (se incluyen si la etapa las resuelve) |
+
+Es el adaptador genérico: mismo body, misma respuesta, `baseUrl` configurable y autenticación opcional. Se usa para servidores locales, proxies o cualquier implementación propia del contrato.
+
+```json
+{
+  "providers": {
+    "local": {
+      "kind": "systemone",
+      "baseUrl": "http://localhost:8000/v1/systemone",
+      "model": "clef-flash",
+      "apiKeyEnv": "LOCAL_API_KEY",
+      "unwrap": "auto"
+    }
+  }
+}
+```
+
+## Respuesta
+
+```json
+{
+  "model": "clef-flash",
+  "answers": {
+    "CP-1": { "type": "score", "score": 3, "probabilities": { "0": 0.01, "1": 0.05, "2": 0.12, "3": 0.82 }, "confidence": 0.82, "legend": {} },
+    "CP-2": { "type": "choice", "choice": "on_brand", "probabilities": { "on_brand": 0.78, "off_brand": 0.22 }, "confidence": 0.78 },
+    "CP-3": { "type": "noul", "noul": 0.91 }
+  },
+  "usage": { "input_tokens": 812, "output_tokens": 0 }
+}
+```
+
+| Campo | Obligatorio | Uso |
+| --- | --- | --- |
+| `answers` | **sí** | Objeto `id → respuesta`. Si falta, `E_PROVIDER`. El motor exige una respuesta por cada pregunta de la etapa. |
+| `model` | no | Si falta, se usa el modelo solicitado. |
+| `usage` | no | `input_tokens`/`output_tokens` se acumulan en `meta` y en `trace`. |
+| `result` | no | Envoltura opcional; se desenvuelve según `unwrap`. |
+
+### Formas de respuesta por tipo
+
+```json
+{ "type": "noul",   "noul": 0.91 }
+{ "type": "choice", "choice": "on_brand", "probabilities": { "on_brand": 0.78 }, "confidence": 0.78 }
+{ "type": "score",  "score": 3, "probabilities": { "3": 0.82 }, "confidence": 0.82, "legend": {} }
+```
+
+- `noul`: número 0..1 (el motor lo clampea).
+- `choice`: `choice` debe ser una de las claves de `criteria`. `probabilities` es necesario si el criterio no define `mapping`: el motor lo consulta como fallback. `confidence` alimenta `needs_review`.
+- `score`: entero 0..(niveles-1); `probabilities` y `legend` son opcionales. `confidence` alimenta `needs_review`.
+- `type` debe coincidir con el tipo declarado en la receta; si no, `E_PROVIDER`.
+
+### Unwrap de `{ result }`
+
+| `unwrap` | Comportamiento |
+| --- | --- |
+| `auto` (default) | Si la raíz tiene `answers`, no desenvuelve. Si `result` es un objeto, devuelve `result`. Si no, devuelve la raíz. |
+| `result` | Exige `result`; si falta, `E_PROVIDER`. |
+| `none` | No desenvuelve; la raíz debe tener `answers`. |
+
+`auto` cubre tanto una respuesta plana como la envoltura típica de Cloudflare (`{ "result": { "answers": ... }, "success": true }`) y de varios proxies.
+
+## Imágenes
+
+- Formato en el body: `{ "content_type": "image/png", "base64": "<datos>" }`. No se envía el prefijo `data:`.
+- Tipos aceptados por la CLI: PNG, JPEG y WebP, detectados por magic bytes. Un `content_type` declarado que no coincide con el contenido produce `E_INPUT`.
+- El `base64` se genera desde el archivo o se toma de la entrada; el motor estima el body como `bytes_decodificados * 4/3 + JSON(vars)` y lo compara contra el tope de 13 MiB.
+
+## Errores HTTP
+
+`postDecisionJson` (`src/providers/cloudflare.ts`) centraliza el manejo:
+
+| Situación | Código | Detalle |
+| --- | --- | --- |
+| Timeout o abort | `E_TIMEOUT` | `timeout tras Nms`; subir `timeoutMs`/`--timeout` |
+| Error de red / DNS / URL | `E_PROVIDER` | `error de red` + mensaje |
+| HTTP non-2xx | `E_PROVIDER` | `<Provider> <status>`; `details` = primeros 500 caracteres del body |
+| Body vacío | `E_PROVIDER` | `respuesta vacía` |
+| Body no JSON | `E_PROVIDER` | `respuesta JSON inválida` |
+| Sin `answers` | `E_PROVIDER` | Sugiere revisar modelo/endpoint o `unwrap` |
+
+Hints por status:
+
+| Status | Cloudflare | TypeSafe | SystemOne |
+| --- | --- | --- | --- |
+| 401/403 | token inválido o sin permiso de Workers AI | API key inválida o sin permisos | el endpoint rechazó las credenciales |
+| 404 | accountId o modelo no habilitado | — | revisar `baseUrl` |
+| 429 | rate limit: esperar o bajar concurrencia | rate limit | rate limit del endpoint |
+
+## Límites y costos
+
+### Límites del contrato (aplicados por el código)
+
+| Límite | Valor | Archivo |
+| --- | --- | --- |
+| Preguntas por request | 64 | `src/schema/recipe.ts` |
+| Opciones de `choice` | 2..255 | `src/schema/recipe.ts` |
+| Niveles de `score` | 2..10 | `src/schema/recipe.ts` |
+| Imágenes por request | 4 | `src/intake/images.ts` |
+| Peso por imagen (decodificada) | 4 MiB | `src/intake/images.ts` |
+| Total de imágenes (decodificado) | 8 MiB | `src/intake/images.ts` |
+| Body HTTP estimado | 13 MiB | `src/intake/images.ts` |
+| Megapíxeles por imagen | 16 MP | `src/intake/images.ts` |
+| Timeout por llamada | 60 s (default) | `src/providers/cloudflare.ts` |
+
+### Clef-flash (ficha del proveedor)
+
+| Dato | Valor |
+| --- | --- |
+| Ventana de contexto | 24.576 tokens |
+| Costo de entrada | USD 0,038 por millón de tokens |
+| Costo de salida | sin costo |
+| Costo de imágenes | cada imagen consume hasta 1024 tokens de la ventana |
+
+Estos valores no están codificados en el repo: son datos de la ficha de Cloudflare y pueden cambiar. El motor solo reporta `usage.input_tokens`/`usage.output_tokens` cuando el endpoint los devuelve.
+
+## Mapeo a `src/providers/types.ts`
+
+```ts
+interface DecisionProvider {
+  readonly name: string;
+  readonly kind: ProviderKind;
+  evaluate(request: DecisionRequest, options?: DecideOptions): Promise<DecisionResponse>;
+}
+```
+
+| Tipo | Campos | Uso |
+| --- | --- | --- |
+| `DecisionRequest` | `model`, `state`, `questions`, `images?` | Lo arma el motor, una vez por etapa. |
+| `Question` | unión `NoulQuestion \| ChoiceQuestion \| ScoreQuestion` | Se construye desde cada criterio. |
+| `ImageInput` | `content_type`, `base64` | Imágenes ya cargadas y validadas. |
+| `DecisionResponse` | `model`, `answers`, `usage?`, `raw?` | Lo que devuelve el provider al motor. |
+| `DecideOptions` | `signal?` | `AbortSignal` compuesto con el timeout. |
+| `ProviderConfig` | `kind`, `model?`, `baseUrl?`, `accountId?`, `apiKeyEnv?`, `apiKey?`, `headers?`, `unwrap?`, `timeoutMs?`, `fixturesDir?` | Config por alias. |
+
+Flujo: `registry.createProvider(alias, cfg)` elige la factory; `evaluate()` hace el POST y devuelve `DecisionResponse`; el motor normaliza y agrega. El provider **no** normaliza, no decide y no conoce la receta.
+
+### Requisitos para ser "systemone compatible"
+
+1. Aceptar `POST <baseUrl>` con `Content-Type: application/json`.
+2. Aceptar `Authorization: Bearer <key>` (o ignorarlo si no hay key).
+3. Leer `{ model, state, questions, images? }` con `questions` como mapa `id → { type, instructions, criteria? }`.
+4. Responder JSON con `answers: { <id>: <respuesta> }`, ya sea en la raíz o dentro de `result`.
+5. Devolver para cada pregunta el mismo `type` enviado, con `noul` (0..1), `choice` (+ `probabilities`) o `score` (+ `probabilities`).
+6. Opcional: `usage.input_tokens`, `usage.output_tokens`, `model`, `legend`.
+7. Soportar (o rechazar explícitamente) `images` como `{ content_type, base64 }`.
+
+## Discrepancias detectadas
+
+1. `src/providers/cloudflare.ts:31-34` resuelve la key solo desde `cfg.apiKey` o la variable de entorno; **no** lee `credentials.json`. Ese merge lo hace la CLI en `src/cli/commands/run.ts:82-87`. Un consumidor de la librería que llame `createProvider` directamente debe pasar `apiKey`/`accountId` en la config.
+2. `src/config/credentials.ts:61` usa `CLOUDFLARE_ACCOUNT_ID` como fallback de `accountId` para cualquier `kind`, no solo Cloudflare.
+3. `.env.example:1-6` no documenta `LOCAL_API_KEY` ni `SYSTEMONE_API_KEY`, aunque `m1.config.example.json:19` y `src/providers/systemone.ts:44` las usan.
+4. `src/providers/typesafe.ts:35-40` rechaza imágenes aunque el contrato común las contemple; la diferencia es del proveedor, no del motor.
+5. `src/schema/recipe.ts:158` permite declarar `provider` en la receta, pero el request siempre sale del provider resuelto por config/CLI (`src/cli/commands/run.ts:71`).
+6. Los costos y el contexto de Clef-flash no están en el código; se documentan desde la ficha del proveedor y no se validan en runtime.

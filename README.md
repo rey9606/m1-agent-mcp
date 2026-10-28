@@ -142,7 +142,7 @@ Puntos clave:
 | `cloudflare` | `@cf/cloudflare/clef-flash` | `https://api.cloudflare.com/client/v4/accounts/<accountId>/ai/run/@cf/cloudflare/<model>` | Sí | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` |
 | `typesafe` | `jev-latest` | `https://api.typesafe.ai/v1/systemone` | No | `TYPESAFE_API_KEY` |
 | `systemone` | `local-decision` (configurable) | `baseUrl` obligatorio | Sí | opcional (`apiKeyEnv` o `SYSTEMONE_API_KEY`) |
-| `mock` | `mock` | — | No | — |
+| `mock` | `mock` | — | Ignora | — |
 
 La precedencia de secretos es: `apiKey`/`accountId` explícitos en la config > variable de entorno (`apiKeyEnv`, y `CLOUDFLARE_ACCOUNT_ID` para la cuenta) > `~/.config/m1-agent/credentials.json`.
 
@@ -177,7 +177,7 @@ Un endpoint "systemone compatible" es el atajo para no escribir código: mismo b
 - Recetas de ejemplo: `examples/copy-checker.json`, `examples/ux-checker.json`.
 - Tests unitarios en `tests/` (engine, expr, intake, normalize, providers, template).
 - Pendiente: servidor **MCP** que exponga `run`/`recipe validate` como tools y el catálogo de recetas como resources.
-- Pendiente: concurrencia entre etapas independientes (hoy el motor es secuencial por diseño).
+- Pendiente: concurrencia entre etapas independientes (hoy el motor recorre las etapas en serie).
 
 ## Documentación
 

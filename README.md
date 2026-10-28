@@ -2,20 +2,17 @@
 
 CLI y motor de flujo para **agentes de decisión** definidos en JSON. No es un LLM: interpreta un workflow, arma las preguntas y delega el juicio a Clef (Cloudflare), JEV (TypeSafe), OpenRouter o un endpoint compatible (incluido llama.cpp local). La decisión final (normalización, score, issues, veredicto) es determinista y la calcula el motor, no el modelo.
 
-## Uso rápido con npx
+## Empezar en 3 comandos
 
-Sin instalar nada:
-
-```bash
-npx --yes m1-agent@latest workflow list
-npx --yes m1-agent@latest run copy-checker --state "Empezá tu prueba gratis. Sin tarjeta." --json
-```
-
-El paquete expone dos binarios equivalentes: `m1-agent` y `m1`. Si preferís el nombre corto:
+Lo primero es el provider: sin uno, `m1` cae en un `mock` de emergencia y los veredictos son simulados, no reales.
 
 ```bash
-npx --yes -p m1-agent m1 workflow list
+npx --yes -p m1-agent m1 provider presets          # 1. elegí un preset
+npx --yes -p m1-agent m1 provider add cf --preset cloudflare --api-key <token> --account-id <id> --default
+npx --yes -p m1-agent m1 run copy-checker --slot copy --state "Empezá tu prueba gratis." --json
 ```
+
+`m1 doctor` te dice en cualquier momento qué falta. El paquete expone dos binarios equivalentes: `m1-agent` y `m1`.
 
 ## Requisitos
 
@@ -28,7 +25,7 @@ Global, con npm:
 
 ```bash
 npm install -g m1-agent
-m1 workflow list
+m1 provider presets
 ```
 
 O desde el repo:

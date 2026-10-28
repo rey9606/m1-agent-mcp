@@ -78,8 +78,8 @@ export async function runCommand(workflowRef: string, flags: RunFlags): Promise<
     const config = loadConfig({ explicit: flags.config });
     if (!json && config.source === '(builtin)') {
       process.stderr.write(
-        '  ! no encontré m1.config.json (ni en el cwd ni en ~/.config/m1-agent/config.json): uso el provider mock de emergencia\n' +
-          '    creá m1.config.json o pasá -c/--config; ver `m1 guide`\n',
+        '  ! no hay ningún provider configurado: uso el mock de emergencia (resultados simulados)\n' +
+          '    configurá uno con `m1 provider presets` y `m1 provider add <alias> --preset <id>`\n',
       );
     }
     const preferenceWarnings: string[] = [];

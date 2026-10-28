@@ -17,7 +17,7 @@ export async function doctorCommand(flags: DoctorFlags): Promise<never> {
     const checks: Array<{ name: string; ok: boolean; detail: string }> = [];
     const major = Number(process.versions.node.split('.')[0]);
     checks.push({ name: 'node', ok: major >= 22, detail: `v${process.versions.node} (requiere >=22)` });
-    checks.push({ name: 'config', ok: Boolean(config.source && config.source !== '(builtin)'), detail: config.source ?? '(builtin)' });
+    checks.push({ name: 'config', ok: Boolean(config.source && config.source !== '(builtin)'), detail: config.source === '(builtin)' || !config.source ? 'sin provider: mock de emergencia (configurá uno con `m1 provider add`)' : config.source });
     checks.push({ name: '.env', ok: existsSync(join(process.cwd(), '.env')), detail: existsSync(join(process.cwd(), '.env')) ? '.env presente' : 'sin .env (opcional)' });
     // Los built-in viajan dentro del paquete, así que se resuelven desde el
     // módulo, no desde el cwd del usuario.

@@ -104,16 +104,19 @@ describe('precommit-guards: bloquea material sensible', () => {
     expect(result.stderr).toContain('máximo 1 MiB');
   });
 
-  it('sale 1 con CLOUDFLARE_API_TOKEN pegado en el código', () => {
-    const repo = makeRepo();
-    stage(repo, 'src/config.ts', `export const token = 'CLOUDFLARE_API_TOKEN=${TOKEN}';\n`);
+  it.each(['CLOUDFLARE_API_TOKEN', 'OPENROUTER_KEY'])(
+    'sale 1 con %s pegado en el código',
+    (name) => {
+      const repo = makeRepo();
+      stage(repo, 'src/config.ts', `export const token = '${name}=${TOKEN}';\n`);
 
-    const result = runGuards(repo.dir);
+      const result = runGuards(repo.dir);
 
-    expect(result.status, result.stderr).toBe(1);
-    expect(result.stderr).toContain('src/config.ts');
-    expect(result.stderr).toContain('token real');
-  });
+      expect(result.status, result.stderr).toBe(1);
+      expect(result.stderr).toContain('src/config.ts');
+      expect(result.stderr).toContain('token real');
+    },
+  );
 
   it('sale 1 con una clave privada dentro de un archivo de texto', () => {
     const repo = makeRepo();

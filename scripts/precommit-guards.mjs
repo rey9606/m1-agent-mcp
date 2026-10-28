@@ -87,7 +87,7 @@ for (const file of staged) {
   if (/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]{0,200}?[A-Za-z0-9+/]{40,}/.test(text)) {
     errors.push(`${file}: contiene una clave privada`);
   }
-  if (/(CLOUDFLARE_API_TOKEN|TYPESAFE_API_KEY|LOCAL_API_KEY)\s*[=:]\s*["']?[A-Za-z0-9_-]{20,}/.test(text)) {
+  if (/(CLOUDFLARE_API_TOKEN|TYPESAFE_API_KEY|LOCAL_API_KEY|OPENROUTER_KEY)\s*[=:]\s*["']?[A-Za-z0-9_-]{20,}/.test(text)) {
     errors.push(`${file}: parece contener un token real`);
   }
 }
